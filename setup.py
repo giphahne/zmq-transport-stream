@@ -25,7 +25,8 @@ setup(
     packages=['zmq_transport'],
     entry_points={
         'console_scripts': [
-            'zmq_transport_stream=transport_stream:run_service',
+            'transport-stream-dev-publisher=transport_stream:dev_publisher'
+            'zmq-transport-stream=transport_stream:run_service',
         ],
     },
 )
