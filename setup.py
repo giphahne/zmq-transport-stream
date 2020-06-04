@@ -23,4 +23,9 @@ setup(
     ],
     install_requires=['boto3', 'zmq'],
     packages=['zmq_transport'],
+    entry_points={
+        'console_scripts': [
+            'zmq_transport_stream=transport_stream:run_service',
+        ],
+    },
 )
