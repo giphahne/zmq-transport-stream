@@ -29,9 +29,15 @@ def publish_to_kinesis_and_firehose(streamname, region,
     """Ingest the data to kinesis"""
 
     kinesis_client = get_kinesis_client('kinesis', region)
+    Records = []
+    count = 0
     for message in message_stream:
-        kinesis_response = kinesis_client.put_record(StreamName=streamname,Data=zlib.compress(message),
-                PartitionKey='multilink')
+        Records.append({ 'Data': message,'PartitionKey': 'multilink'})
+        count +=1
+        if count == 500:
+            kinesis_client.put_records(StreamName=streamname,
+                                                          Records=Records)
+            Records = []
 
 
 
