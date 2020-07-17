@@ -48,9 +48,6 @@ def run_service():
         config = yaml.safe_load(f)
 
     context = zmq.Context()
-    socket = context.socket(zmq.SUB)
-
-    socket.setsockopt_string(zmq.SUBSCRIBE, "")
 
     print(AWS_DEFAULT_REGION, AWS_DEFAULT_PROFILE, SERVICE_CONFIG_FILE)
     print(config)
@@ -59,6 +56,9 @@ def run_service():
                                         AWS_DEFAULT_REGION)
 
     if config["mode"] == 'mux':
+        socket = context.socket(zmq.SUB)
+        socket.setsockopt_string(zmq.SUBSCRIBE, "")
+
         print(kinesis_client)
         print("listening...")
         socket.connect('tcp://127.0.0.1:5555')
