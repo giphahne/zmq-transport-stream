@@ -1,41 +1,30 @@
+import time
 import argparse
 import zlib
 import yaml
+from itertools import repeat
+import json
+from os import environ
 
 import zmq
 import boto3
 import botocore.config
 from botocore.exceptions import ClientError
+import argcomplete
 
+#from kinesis.producer import KinesisProducer
 
-def dev_publisher():
-    """
-    """
+from dotenv import load_dotenv
+load_dotenv()
 
-    context = zmq.Context()
-
-    parser = argparse.ArgumentParser(usage=None)
-    parser.add_argument("--pub-address", type=str, required=True)
-    parser.add_argument("-w", "--wait", action='store_true', default=False)
-    args = parser.parse_args()
-    argcomplete.autocomplete(parser)
-    args_vars = vars(args)
-
-    context = zmq.Context()
-    socket = context.socket(zmq.PUB)
-
-    socket.bind('tcp://127.0.0.1:5555')
-
-    while True:
-        val = input()
-        socket.send(val.encode())
+from transport_stream.stream_utils import get_kinesis_client
+from transport_stream.stream_utils import publish_to_kinesis
+from transport_stream.stream_utils import yield_kinesis_records
 
 
 def run_service():
     """
     """
-
-    from os import environ
 
     # parser = argparse.ArgumentParser(usage=None)
     # parser.add_argument("--sub-address", type=str, required=True)
@@ -53,13 +42,47 @@ def run_service():
     AWS_DEFAULT_REGION = environ.get('AWS_DEFAULT_REGION')
     AWS_DEFAULT_PROFILE = environ.get('AWS_DEFAULT_PROFILE')
 
-    SERVICE_CONFIG_FILE = environ.get('TS_CONFIG_FILE')
+    SERVICE_CONFIG_FILE = environ.get('TS_SERVICE_CONFIG_FILE')
+
+    with open(SERVICE_CONFIG_FILE, 'r') as f:
+        config = yaml.safe_load(f)
 
     context = zmq.Context()
     socket = context.socket(zmq.SUB)
 
-    socket.setsockopt_string(zmq.SUBSCRIBE, 'tcp://127.0.0.1:5555')
+    socket.setsockopt_string(zmq.SUBSCRIBE, "")
 
     print(AWS_DEFAULT_REGION, AWS_DEFAULT_PROFILE, SERVICE_CONFIG_FILE)
-    while True:
-        print(socket.recv().decode())
+    print(config)
+
+    kinesis_client = get_kinesis_client(AWS_DEFAULT_PROFILE,
+                                        AWS_DEFAULT_REGION)
+
+    if config["mode"] == 'mux':
+        print(kinesis_client)
+        print("listening...")
+        socket.connect('tcp://127.0.0.1:5555')
+
+        def yield_from_zmq(socket):
+            while True:
+                val = socket.recv()
+                print(val)
+                yield socket.recv()
+
+        while True:
+            #val = socket.recv().decode()
+            #print(f"received: {val}")
+            publish_to_kinesis(
+                client=kinesis_client,
+                streamname=config['stream_name'],
+                message_stream=yield_from_zmq(socket))
+
+    elif config["mode"] == 'demux':
+        while True:
+            for record in yield_kinesis_records(
+                    stream_name=config['stream_name'], client=kinesis_client):
+                if record:
+                    print(json.loads(record))
+
+    else:
+        raise Exception("unrecognized mode")

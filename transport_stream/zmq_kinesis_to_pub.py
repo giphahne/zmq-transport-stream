@@ -9,21 +9,20 @@ import boto3
 import botocore.config
 from botocore.exceptions import ClientError
 
+# def get_kinesis_client(client, region='us-east-1'):
+#     """Create a boto3 Kinesis client for the given region."""
 
-def get_kinesis_client(client, region='us-east-1'):
-    """Create a boto3 Kinesis client for the given region."""
+#     config = botocore.config.Config()
+#     config.region_name = region
+#     config.connection_timeout = 60
+#     config.read_timeout = 60
+#     session = boto3.Session(profile_name='ffs-dev-eng')
+#     #logger.info("{0} client launched in region {1} ".format(client, region))
+#     kinesis_client = session.client(client, region_name=region, config=config)
+#     #     kinesis_client = boto3.client(
+#     #         client, region_name=region, config=config)  ## Kinesis Streams
 
-    config = botocore.config.Config()
-    config.region_name = region
-    config.connection_timeout = 60
-    config.read_timeout = 60
-    session = boto3.Session(profile_name='ffs-dev-eng')
-    #logger.info("{0} client launched in region {1} ".format(client, region))
-    kinesis_client = session.client(client, region_name=region, config=config)
-    #     kinesis_client = boto3.client(
-    #         client, region_name=region, config=config)  ## Kinesis Streams
-
-    return kinesis_client
+#     return kinesis_client
 
 
 def shard_iterator(stream_name, client, IteratorType='LATEST'):
@@ -39,7 +38,7 @@ def shard_iterator(stream_name, client, IteratorType='LATEST'):
         StreamName=stream_name,
         ShardId=shard_id,
         ShardIteratorType=IteratorType,
-        )
+    )
 
     return shard_iterator['ShardIterator']
 
@@ -48,8 +47,8 @@ def get_records(stream_name, client, limit_number=500):
 
     iterator = shard_iterator(stream_name, client)
 
-    record_response = client.get_records(ShardIterator=iterator,
-                                         Limit=limit_number)
+    record_response = client.get_records(
+        ShardIterator=iterator, Limit=limit_number)
 
     while 'NextShardIterator' in record_response:
         try:
@@ -77,7 +76,7 @@ if __name__ == '__main__':
     #     tcp_address = "tcp://127.0.0.1:5680"
 
     while True:
-        for record in get_records(stream_name=streamname,
-                                  client=kinesis_client):
+        for record in get_records(
+                stream_name=streamname, client=kinesis_client):
             if record:
                 print(json.loads(record))
