@@ -2,10 +2,10 @@
 stream_name: "FfsCommonResources-DownlinkStream-A1ECRRYHWEIZ"
 mode: "mux"
 elementary_streams:
-  - tag: "alpha"
-    port: 5555
-  - tag: "beta"
-    port: 5566
-  - tag: "gamma"
-    port: 5577
+  - - "alpha"
+    - 'tcp://127.0.0.1:5555'
+  - - "beta"
+    - 'tcp://127.0.0.1:5566'
+  - - "gamma"
+    - 'tcp://127.0.0.1:5577'
 ...

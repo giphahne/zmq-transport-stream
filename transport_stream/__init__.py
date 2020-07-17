@@ -20,6 +20,9 @@ load_dotenv()
 from transport_stream.stream_utils import get_kinesis_client
 from transport_stream.stream_utils import publish_to_kinesis
 from transport_stream.stream_utils import yield_kinesis_records
+from transport_stream.stream_utils import subscribe_and_tag
+from transport_stream.stream_utils import encode_elementary_stream_message
+from transport_stream.stream_utils import decode_elementary_stream_message
 
 
 def run_service():
@@ -56,26 +59,22 @@ def run_service():
                                         AWS_DEFAULT_REGION)
 
     if config["mode"] == 'mux':
-        socket = context.socket(zmq.SUB)
-        socket.setsockopt_string(zmq.SUBSCRIBE, "")
 
-        print(kinesis_client)
-        print("listening...")
-        socket.connect('tcp://127.0.0.1:5555')
-
-        def yield_from_zmq(socket):
-            while True:
-                val = socket.recv()
-                print(val)
-                yield socket.recv()
+        def verbose(m):
+            print(m)
+            return m
 
         while True:
-            #val = socket.recv().decode()
-            #print(f"received: {val}")
             publish_to_kinesis(
                 client=kinesis_client,
                 streamname=config['stream_name'],
-                message_stream=yield_from_zmq(socket))
+                message_stream=map(
+                    verbose,
+                    map(
+                        encode_elementary_stream_message,
+                        subscribe_and_tag(
+                            context=context,
+                            tagged_addresses=config['elementary_streams']))))
 
     elif config["mode"] == 'demux':
         while True:

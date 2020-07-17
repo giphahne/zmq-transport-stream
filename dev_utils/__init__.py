@@ -4,6 +4,7 @@ import zlib
 import yaml
 from itertools import repeat
 import json
+from random import uniform
 
 import zmq
 import boto3
@@ -22,7 +23,7 @@ def dev_publisher():
     context = zmq.Context()
 
     parser = argparse.ArgumentParser(usage=None)
-    #parser.add_argument("--pub-address", type=str, required=True)
+    parser.add_argument("-p", "--pub-port", type=str, required=True)
     parser.add_argument("-w", "--wait", action='store_true', default=False)
     args = parser.parse_args()
     argcomplete.autocomplete(parser)
@@ -31,9 +32,9 @@ def dev_publisher():
     context = zmq.Context()
     socket = context.socket(zmq.PUB)
 
-    socket.bind('tcp://127.0.0.1:5555')
+    socket.bind(f'tcp://127.0.0.1:{args.pub_port}')
 
-    for val in enumerate(repeat('x'), 1):
-        time.sleep(0.5)
-        print(f"sending: {json.dumps(val).encode()}")
+    for val in enumerate(repeat('x')):
+        time.sleep(uniform(0, 1))
+        print(f"<{args.pub_port}> sending: {json.dumps(val).encode()}")
         socket.send(json.dumps(val).encode())
