@@ -64,6 +64,8 @@ def run_service():
             print(m)
             return m
 
+        #verbose = lambda x: x
+
         while True:
             publish_to_kinesis(
                 client=kinesis_client,
