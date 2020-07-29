@@ -3,9 +3,9 @@ stream_name: "FfsCommonResources-DownlinkStream-A1ECRRYHWEIZ"
 mode: "demux"
 elementary_streams:
   - - "alpha"
-    - 'tcp://127.0.0.1:5555'
+    - 'tcp://127.0.0.1:5559'
   - - "beta"
-    - 'tcp://127.0.0.1:5566'
+    - 'tcp://127.0.0.1:5569'
   - - "gamma"
-    - 'tcp://127.0.0.1:5577'
+    - 'tcp://127.0.0.1:5579'
 ...

@@ -86,16 +86,26 @@ def subscribe_and_tag(context, tagged_addresses, subscriptions=""):
             yield (tag_dict[socket], socket.recv().decode())
 
 
+def fan_out_tags(context, tagged_addresses):
+    tag_dict = {}
+
+    for tag, address in tagged_addresses:
+        print("binding to {}, with tag: {}".format(address, tag))
+        socket = context.socket(zmq.PUB)
+
+        socket.bind(address)
+        tag_dict[tag] = socket
+
+    while True:
+        message = yield
+        tag_dict[message[0]].send(message[1].encode())
+
+
 def get_kinesis_client(profile, region):
     """Instantiate a boto3 Kinesis client for the given region."""
 
-    #config = botocore.config.Config()
-    #config.region_name = region
-    #config.connection_timeout = 60
-    #config.read_timeout = 60
     session = boto3.Session(profile_name=profile)
-    kinesis_client = session.client(
-        'kinesis', region_name=region)  #, config=config)
+    kinesis_client = session.client('kinesis', region_name=region)
 
     return kinesis_client
 
@@ -127,7 +137,7 @@ def yield_kinesis_records(client, stream_name):
                     yield record['Data']
             else:
                 #print("ReadthroughputExceed")
-                print(json_dumps(record_response))
+                #print(json_dumps(record_response))
                 # ReadthroughputExceed
                 time.sleep(2)
 

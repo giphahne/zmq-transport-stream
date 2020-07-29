@@ -23,6 +23,7 @@ from transport_stream.stream_utils import yield_kinesis_records
 from transport_stream.stream_utils import subscribe_and_tag
 from transport_stream.stream_utils import encode_elementary_stream_message
 from transport_stream.stream_utils import decode_elementary_stream_message
+from transport_stream.stream_utils import fan_out_tags
 
 
 def run_service():
@@ -64,7 +65,7 @@ def run_service():
             print(m)
             return m
 
-        #verbose = lambda x: x
+        verbose = lambda x: x
 
         while True:
             publish_to_kinesis(
@@ -79,11 +80,15 @@ def run_service():
                             tagged_addresses=config['elementary_streams']))))
 
     elif config["mode"] == 'demux':
+        fan_out = fan_out_tags(
+            context, tagged_addresses=config['elementary_streams'])
+        fan_out.send(None)
+
         while True:
             for record in yield_kinesis_records(
                     stream_name=config['stream_name'], client=kinesis_client):
                 if record:
-                    print(json.loads(record))
+                    fan_out.send(json.loads(record))
 
     else:
         raise Exception("unrecognized mode")
