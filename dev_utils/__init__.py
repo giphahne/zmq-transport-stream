@@ -35,6 +35,6 @@ def dev_publisher():
     socket.bind(f'tcp://127.0.0.1:{args.pub_port}')
 
     for val in enumerate(repeat('x')):
-        time.sleep(uniform(0, 1))
+        time.sleep(uniform(0.0, 0.6))
         print(f"<{args.pub_port}> sending: {json.dumps(val).encode()}")
         socket.send(json.dumps(val).encode())

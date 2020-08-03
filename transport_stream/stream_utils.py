@@ -7,6 +7,8 @@ import boto3
 import botocore.config
 from botocore.exceptions import ClientError
 
+from kinesis.consumer import KinesisConsumer
+
 TIMESTAMP_FORMAT = '%Y-%m-%d %H:%M:%S.%fZ'
 TIMEONLY_FORMAT = '%H:%M:%S'
 
@@ -87,6 +89,15 @@ def subscribe_and_tag(context, tagged_addresses, subscriptions=""):
 
 
 def fan_out_tags(context, tagged_addresses):
+    """
+                      <zmq address>
+                    /
+                   /
+    generator -->  -- <zmq address>
+                   \
+                    \
+                      <zmq address>
+    """
     tag_dict = {}
 
     for tag, address in tagged_addresses:
@@ -139,11 +150,19 @@ def yield_kinesis_records(client, stream_name):
                 #print("ReadthroughputExceed")
                 #print(json_dumps(record_response))
                 # ReadthroughputExceed
-                time.sleep(2)
+                time.sleep(0.33333)
 
         except ClientError as e:
             print("Error iterating Shards: {0}".format(e))
             break
+
+
+# def yield_kinesis_records(client, stream_name):
+#     """
+#     """
+#     consumer = KinesisConsumer(stream_name=stream_name)
+#     for message in consumer:
+#         yield message
 
 
 def publish_to_kinesis(client, streamname, message_stream):
