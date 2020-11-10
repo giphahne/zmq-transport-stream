@@ -172,6 +172,6 @@ def publish_to_kinesis(client, streamname, message_stream):
     Records = []
     for message in message_stream:
         Records.append({'Data': message, 'PartitionKey': 'ffs'})
-        if len(Records) >= 3:
+        if len(Records) >= 496:
             client.put_records(StreamName=streamname, Records=Records)
             Records = []
