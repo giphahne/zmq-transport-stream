@@ -46,7 +46,7 @@ def dev_scope():
     context = zmq.Context()
 
     parser = argparse.ArgumentParser(usage=None)
-    parser.add_argument("--sub-port", type=str, required=True)
+    parser.add_argument("sub-port", type=str, required=True)
     args = parser.parse_args()
     argcomplete.autocomplete(parser)
     args_vars = vars(args)
