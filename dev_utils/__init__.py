@@ -55,8 +55,6 @@ def dev_scope():
     socket.setsockopt_string(zmq.SUBSCRIBE, "")
     socket.setsockopt(zmq.RCVHWM, 30000)
 
-    option = get_config_main(return_found_value=True)
-
     socket.connect(args.sub_port)
 
     while True:
