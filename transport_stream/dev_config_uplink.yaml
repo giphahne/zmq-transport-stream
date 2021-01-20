@@ -1,0 +1,11 @@
+---
+stream_name: "FfsCommonResources-DownlinkStream-A1ECRRYHWEIZ"
+mode: "mux"
+elementary_streams:
+  - - "alpha"
+    - 'tcp://127.0.0.1:5555'
+  - - "beta"
+    - 'tcp://127.0.0.1:5582'
+  - - "gamma"
+    - 'tcp://127.0.0.1:5577'
+...
