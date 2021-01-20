@@ -46,7 +46,7 @@ def dev_scope():
     context = zmq.Context()
 
     parser = argparse.ArgumentParser(usage=None)
-    parser.add_argument("sub-port", type=str)
+    parser.add_argument("--target", type=str)
     args = parser.parse_args()
     argcomplete.autocomplete(parser)
     args_vars = vars(args)
@@ -55,7 +55,7 @@ def dev_scope():
     socket.setsockopt_string(zmq.SUBSCRIBE, "")
     socket.setsockopt(zmq.RCVHWM, 30000)
 
-    socket.connect(args.sub_port)
+    socket.connect(args.target)
 
     while True:
         raw_message = socket.recv().decode()
