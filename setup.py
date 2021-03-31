@@ -9,7 +9,7 @@ with open(path.join(here, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name='zmq_transport_stream',
-    version='0.1.7',
+    version='0.1.8',
     description='(de-)/mux ØMQ sockets over a kinesis trasport stream',
     url='https://collinsaerospace.com',
     author='Dan Hahne',

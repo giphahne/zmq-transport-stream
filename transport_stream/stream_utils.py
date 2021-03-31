@@ -88,7 +88,7 @@ def subscribe_and_tag(context, tagged_addresses, subscriptions=""):
             yield (tag_dict[socket], socket.recv().decode())
 
 
-def fan_out_tags(context, tagged_addresses):
+def fan_out_tags(context, tagged_addresses=[], raw_stream=None):
     """
                       <zmq address>
                     /
@@ -100,16 +100,30 @@ def fan_out_tags(context, tagged_addresses):
     """
     tag_dict = {}
 
-    for tag, address in tagged_addresses:
-        print("binding to {}, with tag: {}".format(address, tag))
+    if raw_stream:
+        print("binding RAW stream to {}".format(raw_stream))
         socket = context.socket(zmq.PUB)
 
-        socket.bind(address)
-        tag_dict[tag] = socket
+        socket.bind(raw_stream)
+        tag_dict["raw"] = socket
+
+    else:
+        for tag, address in tagged_addresses:
+            print("binding to {}, with tag: {}".format(address, tag))
+            socket = context.socket(zmq.PUB)
+
+            socket.bind(address)
+            tag_dict[tag] = socket
 
     while True:
         message = yield
-        tag_dict[message[0]].send(message[1].encode())
+        #print(json_dumps(message, indent=4))
+
+        if raw_stream:
+            tag_dict["raw"].send(message)
+
+        else:
+            tag_dict[message[0]].send(message[1].encode())
 
 
 def get_kinesis_client(profile, region):
