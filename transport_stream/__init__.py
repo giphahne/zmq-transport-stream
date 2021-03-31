@@ -82,6 +82,7 @@ def run_service():
     elif config["mode"] == 'demux':
         fan_out = fan_out_tags(
             context, tagged_addresses=config['elementary_streams'])
+
         fan_out.send(None)
 
         while True:
@@ -89,6 +90,17 @@ def run_service():
                     stream_name=config['stream_name'], client=kinesis_client):
                 if record:
                     fan_out.send(json.loads(record))
+
+    elif config["mode"] == 'raw':
+        fan_out = fan_out_tags(context, raw_stream=config["raw_stream"])
+
+        fan_out.send(None)
+
+        while True:
+            for record in yield_kinesis_records(
+                    stream_name=config['stream_name'], client=kinesis_client):
+                if record:
+                    fan_out.send(record)
 
     else:
         raise Exception("unrecognized mode")
