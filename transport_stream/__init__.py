@@ -102,5 +102,28 @@ def run_service():
                 if record:
                     fan_out.send(record)
 
+    elif config["mode"] == 'pub':
+
+        def verbose(m):
+            print(m)
+            return m
+
+        verbose = lambda x: x
+
+        while True:
+            publish_to_kinesis(
+                client=kinesis_client,
+                streamname=config['stream_name'],
+                message_stream=map(
+                    verbose,
+                    map(
+                        encode_elementary_stream_message,
+                        map(
+                            lambda x: x[1],
+                            subscribe_and_tag(
+                                context=context,
+                                tagged_addresses=config['elementary_streams']))
+                    )))
+
     else:
         raise Exception("unrecognized mode")
