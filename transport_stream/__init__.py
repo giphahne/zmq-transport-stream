@@ -116,14 +116,14 @@ def run_service():
                 streamname=config['stream_name'],
                 message_stream=map(
                     verbose,
+                    # map(
+                    #     encode_elementary_stream_message,
                     map(
-                        encode_elementary_stream_message,
-                        map(
-                            lambda x: x[1],
-                            subscribe_and_tag(
-                                context=context,
-                                tagged_addresses=config['elementary_streams']))
-                    )))
+                        lambda x: x[1],
+                        subscribe_and_tag(
+                            context=context,
+                            tagged_addresses=config['elementary_streams'])
+                    )))  #)
 
     else:
         raise Exception("unrecognized mode")
