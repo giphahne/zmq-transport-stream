@@ -34,7 +34,7 @@ def json_dumps(obj, indent=None, sort_keys=False):
 
 
 def encode_elementary_stream_message(message):
-    return json_dumps(message)
+    return json_dumps(message) + "\n"
 
 
 def decode_elementary_stream_message(message):
