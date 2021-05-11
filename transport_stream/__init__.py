@@ -125,5 +125,28 @@ def run_service():
                             tagged_addresses=config['elementary_streams'])
                     )))  #)
 
+    if config["mode"] == 'sump':
+
+        def verbose(m):
+            print(m)
+            return m
+
+        verbose = lambda x: x
+
+        while True:
+            publish_to_kinesis(
+                client=kinesis_client,
+                streamname=config['stream_name'],
+                message_stream=map(
+                    verbose,
+                    # map(
+                    #     encode_elementary_stream_message,
+                    map(
+                        lambda x: f"{x[1]}\n",
+                        subscribe_and_tag(
+                            context=context,
+                            tagged_addresses=config['elementary_streams'],
+                            bind=True))))
+
     else:
         raise Exception("unrecognized mode")
