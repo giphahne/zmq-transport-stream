@@ -41,7 +41,7 @@ def decode_elementary_stream_message(message):
     return json.loads(message)
 
 
-def subscribe_and_tag(context, tagged_addresses, subscriptions=""):
+def subscribe_and_tag(context, tagged_addresses, subscriptions="", bind=False):
     """This allows you to subscribe to one or more addresses and subscribe
     to multiple 'feeds'. The generator returns a tuple.  The first is
     the tag that is associated with the address the message came from.
@@ -69,7 +69,12 @@ def subscribe_and_tag(context, tagged_addresses, subscriptions=""):
     tag_dict = {}
 
     for tag, address in tagged_addresses:
-        print("connecting to {}, with tag: {}".format(address, tag))
+
+        if bind:
+            print("binding to {}, with tag: {}".format(address, tag))
+        else:
+            print("connecting to {}, with tag: {}".format(address, tag))
+
         socket = context.socket(zmq.SUB)
 
         for subscription in subscriptions:
@@ -78,7 +83,10 @@ def subscribe_and_tag(context, tagged_addresses, subscriptions=""):
             except NameError:
                 socket.setsockopt_string(zmq.SUBSCRIBE, subscription)
 
-        socket.connect(address)
+        if bind:
+            socket.bind(address)
+        else:
+            socket.connect(address)
         poller.register(socket, zmq.POLLIN)
         tag_dict[socket] = tag
 
@@ -186,6 +194,7 @@ def publish_to_kinesis(client, streamname, message_stream):
     Records = []
     for message in message_stream:
         Records.append({'Data': message, 'PartitionKey': 'ffs'})
-        if len(Records) >= 496:
+        #if len(Records) >= 496:
+        if len(Records) >= 8:
             client.put_records(StreamName=streamname, Records=Records)
             Records = []
