@@ -1,6 +1,8 @@
 import time
 import json
 from datetime import datetime
+import hashlib
+import zlib
 
 import zmq
 import boto3
@@ -152,7 +154,7 @@ def yield_kinesis_records(client, stream_name):
         print(json_dumps(response))
         return client.get_shard_iterator(
             StreamName=stream_name,
-            ShardId=response['StreamDescription']['Shards'][0]['ShardId'],
+            ShardId=response['StreamDescription']['Shards'][-1]['ShardId'],
             ShardIteratorType=IteratorType,
         )['ShardIterator']
 
@@ -193,8 +195,15 @@ def publish_to_kinesis(client, streamname, message_stream):
 
     Records = []
     for message in message_stream:
-        Records.append({'Data': message, 'PartitionKey': 'ffs'})
+        Records.append({
+            'Data':
+            zlib.compress(bytes(json_dumps(message).encode('utf-8'))),
+            'PartitionKey':
+            hashlib.md5(str(message).encode('utf-8')).hexdigest()
+        })
         #if len(Records) >= 496:
         if len(Records) >= 8:
-            client.put_records(StreamName=streamname, Records=Records)
+            response = client.put_records(
+                StreamName=streamname, Records=Records)
+            print(json_dumps(response))
             Records = []
