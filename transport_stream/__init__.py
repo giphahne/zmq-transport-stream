@@ -47,13 +47,16 @@ def run_service():
     AWS_DEFAULT_PROFILE = environ.get('AWS_DEFAULT_PROFILE')
 
     SERVICE_CONFIG_FILE = environ.get('TS_SERVICE_CONFIG_FILE')
+    TRANSPORT_STREAM_BATCH_SIZE = environ.get('TRANSPORT_STREAM_BATCH_SIZE',
+                                              32)
 
     with open(SERVICE_CONFIG_FILE, 'r') as f:
         config = yaml.safe_load(f)
 
     context = zmq.Context()
 
-    print(AWS_DEFAULT_REGION, AWS_DEFAULT_PROFILE, SERVICE_CONFIG_FILE)
+    print(AWS_DEFAULT_REGION, AWS_DEFAULT_PROFILE, SERVICE_CONFIG_FILE,
+          TRANSPORT_STREAM_BATCH_SIZE)
     print(config)
 
     kinesis_client = get_kinesis_client(AWS_DEFAULT_PROFILE,
@@ -77,7 +80,9 @@ def run_service():
                         encode_elementary_stream_message,
                         subscribe_and_tag(
                             context=context,
-                            tagged_addresses=config['elementary_streams']))))
+                            tagged_addresses=config['elementary_streams']))),
+                batch_size=TRANSPORT_STREAM_BATCH_SIZE,
+            )
 
     elif config["mode"] == 'demux':
         fan_out = fan_out_tags(
@@ -116,14 +121,13 @@ def run_service():
                 streamname=config['stream_name'],
                 message_stream=map(
                     verbose,
-                    # map(
-                    #     encode_elementary_stream_message,
                     map(
                         lambda x: x[1],
                         subscribe_and_tag(
                             context=context,
-                            tagged_addresses=config['elementary_streams'])
-                    )))  #)
+                            tagged_addresses=config['elementary_streams']))),
+                batch_size=TRANSPORT_STREAM_BATCH_SIZE,
+            )
 
     if config["mode"] == 'sump':
 
@@ -139,14 +143,14 @@ def run_service():
                 streamname=config['stream_name'],
                 message_stream=map(
                     verbose,
-                    # map(
-                    #     encode_elementary_stream_message,
                     map(
                         lambda x: f"{x[1]}\n",
                         subscribe_and_tag(
                             context=context,
                             tagged_addresses=config['elementary_streams'],
-                            bind=True))))
+                            bind=True))),
+                batch_size=TRANSPORT_STREAM_BATCH_SIZE,
+            )
 
     else:
         raise Exception("unrecognized mode")

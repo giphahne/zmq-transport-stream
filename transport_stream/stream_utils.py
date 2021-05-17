@@ -192,7 +192,7 @@ def yield_kinesis_records(client, stream_name):
 #         yield message
 
 
-def publish_to_kinesis(client, streamname, message_stream):
+def publish_to_kinesis(client, streamname, message_stream, batch_size):
     """
     """
 
@@ -204,8 +204,8 @@ def publish_to_kinesis(client, streamname, message_stream):
             'PartitionKey':
             hashlib.md5(str(message).encode('utf-8')).hexdigest()
         })
-        if len(Records) >= 496:
-            #if len(Records) >= 8:
+        #if len(Records) >= 496:
+        if len(Records) >= batch_size:
             response = client.put_records(
                 StreamName=streamname, Records=Records)
             print(json_dumps(response))
