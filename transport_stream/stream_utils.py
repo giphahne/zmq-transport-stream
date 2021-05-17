@@ -169,10 +169,13 @@ def yield_kinesis_records(client, stream_name):
 
             if record_response['Records']:
                 for record in record_response['Records']:
-                    yield record['Data']
+                    # the so-called ``magic number'' for ZLIB
+                    # default compression level is '789c'-hex
+                    if record['Data'][0:2].hex() == '789c':
+                        yield zlib.decompress(record['Data'])
+                    else:
+                        yield record['Data']
             else:
-                #print("ReadthroughputExceed")
-                #print(json_dumps(record_response))
                 # ReadthroughputExceed
                 time.sleep(0.33333)
 
@@ -201,8 +204,8 @@ def publish_to_kinesis(client, streamname, message_stream):
             'PartitionKey':
             hashlib.md5(str(message).encode('utf-8')).hexdigest()
         })
-        #if len(Records) >= 496:
-        if len(Records) >= 8:
+        if len(Records) >= 496:
+            #if len(Records) >= 8:
             response = client.put_records(
                 StreamName=streamname, Records=Records)
             print(json_dumps(response))
