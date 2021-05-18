@@ -3,6 +3,7 @@ import json
 from datetime import datetime
 import hashlib
 import zlib
+import gzip
 
 import zmq
 import boto3
@@ -200,7 +201,7 @@ def publish_to_kinesis(client, streamname, message_stream, batch_size):
     for message in message_stream:
         Records.append({
             'Data':
-            zlib.compress(bytes(json_dumps(message).encode('utf-8'))),
+            gzip.compress(bytes(json_dumps(message).encode('utf-8')) + b'\n'),
             'PartitionKey':
             hashlib.md5(str(message).encode('utf-8')).hexdigest()
         })
