@@ -74,17 +74,20 @@ def run_service():
         fan_out = fan_out_tags(
             context, tagged_addresses=config['elementary_streams'])
 
+        # advance the fan_out_tags generator to the ``yield '' statement
         fan_out.send(None)
 
         while True:
             for record in yield_kinesis_records(
                     stream_name=config['stream_name'], client=kinesis_client):
                 if record:
-                    fan_out.send(json.loads(record))
+                    #fan_out.send(json.loads(record))
+                    fan_out.send(json.loads(json.loads(record.decode())))
 
     elif config["mode"] == 'raw':
         fan_out = fan_out_tags(context, raw_stream=config["raw_stream"])
 
+        # advance the fan_out_tags generator to the ``yield '' statement
         fan_out.send(None)
 
         while True:

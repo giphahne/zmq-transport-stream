@@ -138,6 +138,9 @@ def fan_out_tags(context, tagged_addresses=[], raw_stream=None):
             tag_dict["raw"].send(message)
 
         else:
+            #print(message[0])
+            #print(message[1])
+            #print(message)
             tag_dict[message[0]].send(message[1].encode())
 
 
