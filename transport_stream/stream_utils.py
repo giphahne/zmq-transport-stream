@@ -9,6 +9,7 @@ import base64
 import argparse
 import fileinput
 import sys
+import binascii
 
 import zmq
 import boto3
@@ -200,6 +201,10 @@ def package_raw_record_for_deaggregation(stream_record):
     }
 
 
+def un_pack_deaggregated_record(user_record):
+    return base64.b64decode(user_record['kinesis']['data'])
+
+
 def yield_kinesis_records(client, stream_name):
     """
     """
@@ -222,16 +227,17 @@ def yield_kinesis_records(client, stream_name):
             record_response = client.get_records(
                 ShardIterator=record_response['NextShardIterator'])
 
-            elementary_records = 0
             if record_response['Records']:
-                for record in iter_deaggregate_records(
-                        map(package_raw_record_for_deaggregation,
-                            record_response['Records'])):
-                    elementary_records += 1
+                for user_record in map(
+                        un_pack_deaggregated_record,
+                        iter_deaggregate_records(
+                            map(package_raw_record_for_deaggregation,
+                                record_response['Records']))):
 
-                    yield gzip.decompress(
-                        base64.b64decode(
-                            base64.b64decode(record['kinesis']['data'])))
+                    try:
+                        yield gzip.decompress(base64.b64decode(user_record))
+                    except (gzip.BadGzipFile, binascii.Error) as e:
+                        yield user_record
 
             else:
                 # ReadthroughputExceed
