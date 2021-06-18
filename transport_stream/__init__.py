@@ -12,8 +12,6 @@ import botocore.config
 from botocore.exceptions import ClientError
 import argcomplete
 
-#from kinesis.producer import KinesisProducer
-
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -29,18 +27,6 @@ from transport_stream.stream_utils import fan_out_tags
 def run_service():
     """
     """
-
-    # parser = argparse.ArgumentParser(usage=None)
-    # parser.add_argument("--sub-address", type=str, required=True)
-    # parser.add_argument(
-    #     "--region", type=str, default="us-east-1", help=("region"))
-    # parser.add_argument(
-    #     "--profile",
-    #     type=str,
-    #     #default="flight-data-service-client",
-    #     help=("profile to use"))
-    # args = parser.parse_args()
-    # args_vars = vars(args)
 
     # General Config
     AWS_DEFAULT_REGION = environ.get('AWS_DEFAULT_REGION')

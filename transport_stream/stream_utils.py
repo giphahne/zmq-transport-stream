@@ -4,13 +4,19 @@ from datetime import datetime
 import hashlib
 import zlib
 import gzip
+from functools import partial
+import base64
+import argparse
+import fileinput
+import sys
 
 import zmq
 import boto3
 import botocore.config
 from botocore.exceptions import ClientError
 
-from kinesis.consumer import KinesisConsumer
+import aws_kinesis_agg.aggregator
+from aws_kinesis_agg.deaggregator import iter_deaggregate_records
 
 TIMESTAMP_FORMAT = '%Y-%m-%d %H:%M:%S.%fZ'
 TIMEONLY_FORMAT = '%H:%M:%S'
@@ -128,8 +134,6 @@ def fan_out_tags(context, tagged_addresses=[], raw_stream=None):
 
     while True:
         message = yield
-        #print(json_dumps(message, indent=4))
-
         if raw_stream:
             tag_dict["raw"].send(message)
 
@@ -139,11 +143,58 @@ def fan_out_tags(context, tagged_addresses=[], raw_stream=None):
 
 def get_kinesis_client(profile, region):
     """Instantiate a boto3 Kinesis client for the given region."""
-
     session = boto3.Session(profile_name=profile)
     kinesis_client = session.client('kinesis', region_name=region)
 
     return kinesis_client
+
+
+def de_aggregate_records(stream_record):
+    pass
+
+
+def package_raw_record_for_deaggregation(stream_record):
+    """
+    {
+        "Records": [
+            {
+                "kinesis": {
+                    "kinesisSchemaVersion": "1.0",
+                    "partitionKey": "1",
+                    "sequenceNumber": "495903382714906588898...",
+                    "data": "SGVsbG8sIHRoaXMgaXMgYSB0ZXN0Lg==",
+                    "approximateArrivalTimestamp": 1545084650.987
+                },
+                "eventSource": "aws:kinesis",
+                "eventVersion": "1.0",
+                "eventID": "shardId-000000000006:4959033827989136588898...",
+                "eventName": "aws:kinesis:record",
+                "invokeIdentityArn": "<ARN>",
+                "awsRegion": "us-east-2",
+                "eventSourceARN": "<ARN>"
+            },
+            ...
+        ]
+    }
+    """
+    return {
+        "kinesis": {
+            "kinesisSchemaVersion": "1.0",
+            #"partitionKey": "1",
+            "sequenceNumber": "<stub>",
+            #"data": stream_record['Data'],
+            "data": base64.b64encode(stream_record['Data']),
+            "approximateArrivalTimestamp": 0
+        },
+        #        "kinesis": stream_record,
+        #"eventSource": "aws:kinesis",
+        #"eventVersion": "1.0",
+        #"eventID": "shardId-000000000006:4959033827989136588898...",
+        #"eventName": "aws:kinesis:record",
+        #"invokeIdentityArn": "<ARN>",
+        #"awsRegion": "us-east-2",
+        #"eventSourceARN": "<ARN>"
+    }
 
 
 def yield_kinesis_records(client, stream_name):
@@ -152,7 +203,7 @@ def yield_kinesis_records(client, stream_name):
 
     def kinesis_shard_iterator(stream_name, client, IteratorType='LATEST'):
         response = client.describe_stream(StreamName=stream_name)
-        print(json_dumps(response))
+        #print(json_dumps(response))
         return client.get_shard_iterator(
             StreamName=stream_name,
             ShardId=response['StreamDescription']['Shards'][-1]['ShardId'],
@@ -168,14 +219,17 @@ def yield_kinesis_records(client, stream_name):
             record_response = client.get_records(
                 ShardIterator=record_response['NextShardIterator'])
 
+            elementary_records = 0
             if record_response['Records']:
-                for record in record_response['Records']:
-                    # the so-called ``magic number'' for ZLIB
-                    # default compression level is '789c'-hex
-                    if record['Data'][0:2].hex() == '789c':
-                        yield zlib.decompress(record['Data'])
-                    else:
-                        yield record['Data']
+                for record in iter_deaggregate_records(
+                        map(package_raw_record_for_deaggregation,
+                            record_response['Records'])):
+                    elementary_records += 1
+
+                    yield gzip.decompress(
+                        base64.b64decode(
+                            base64.b64decode(record['kinesis']['data'])))
+
             else:
                 # ReadthroughputExceed
                 time.sleep(0.33333)
@@ -185,29 +239,57 @@ def yield_kinesis_records(client, stream_name):
             break
 
 
-# def yield_kinesis_records(client, stream_name):
-#     """
-#     """
-#     consumer = KinesisConsumer(stream_name=stream_name)
-#     for message in consumer:
-#         yield message
+def base_send_agg_record(client, streamname, agg_record=None):
+    pk, ehk, data = agg_record.get_contents()
+    print(f"sending: {pk}")
+
+    client.put_record(StreamName=streamname, Data=data, PartitionKey=pk)
 
 
 def publish_to_kinesis(client, streamname, message_stream, batch_size):
     """
     """
 
-    Records = []
+    kinesis_aggregator = aws_kinesis_agg.aggregator.RecordAggregator()
+
+    send_agg_record = partial(base_send_agg_record, client, streamname)
+    kinesis_aggregator.on_record_complete(send_agg_record)
+
     for message in message_stream:
-        Records.append({
-            'Data':
-            gzip.compress(bytes(json_dumps(message).encode('utf-8')) + b'\n'),
-            'PartitionKey':
-            hashlib.md5(str(message).encode('utf-8')).hexdigest()
-        })
-        #if len(Records) >= 496:
-        if len(Records) >= batch_size:
-            response = client.put_records(
-                StreamName=streamname, Records=Records)
-            print(json_dumps(response))
-            Records = []
+        pk, ehk, data = (
+            hashlib.md5(str(message).encode('utf-8')).hexdigest(), None,
+            base64.b64encode(
+                gzip.compress(
+                    json_dumps(message).encode('utf-8'))).decode('utf-8') +
+            '\n')
+
+        kinesis_aggregator.add_user_record(pk, data, ehk)
+
+    #Clear out any remaining records that didn't trigger a callback yet
+    print("clearing out extra:")
+    send_agg_record(kinesis_aggregator.clear_and_get())
+
+
+def unpack_stream_record():
+    """
+    Entry point for CLI application.
+    """
+
+    description = "Unpack Aggregated Kinesis Records"
+    parser = argparse.ArgumentParser(usage=None, description=description)
+
+    parser.add_argument("-f", "--files", type=str, nargs="*", default="-")
+
+    args = parser.parse_args()
+
+    try:
+        with fileinput.input(args.files) as f:
+            for l in f:
+                sys.stdout.write(
+                    gzip.decompress(base64.b64decode(l)).decode('utf-8'))
+                sys.stdout.write('\n')
+
+    except (BrokenPipeError, IOError, StopIteration) as e:
+        pass
+
+    sys.stderr.close()
