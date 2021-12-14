@@ -93,6 +93,8 @@ def subscribe_and_tag(context, tagged_addresses, subscriptions="", bind=False):
             except NameError:
                 socket.setsockopt_string(zmq.SUBSCRIBE, subscription)
 
+        socket.setsockopt(zmq.RCVHWM, 90000)
+
         if bind:
             socket.bind(address)
         else:
