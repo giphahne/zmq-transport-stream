@@ -34,7 +34,7 @@ def run_service():
 
     SERVICE_CONFIG_FILE = environ.get('TS_SERVICE_CONFIG_FILE')
     TRANSPORT_STREAM_BATCH_SIZE = environ.get('TRANSPORT_STREAM_BATCH_SIZE',
-                                              32)
+                                              None)
 
     with open(SERVICE_CONFIG_FILE, 'r') as f:
         config = yaml.safe_load(f)

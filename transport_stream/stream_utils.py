@@ -257,7 +257,7 @@ def base_send_agg_record(client, streamname, agg_record=None):
     client.put_record(StreamName=streamname, Data=data, PartitionKey=pk)
 
 
-def publish_to_kinesis(client, streamname, message_stream, batch_size):
+def publish_to_kinesis(client, streamname, message_stream, batch_size=None):
     """
     """
 
@@ -266,7 +266,7 @@ def publish_to_kinesis(client, streamname, message_stream, batch_size):
     send_agg_record = partial(base_send_agg_record, client, streamname)
     kinesis_aggregator.on_record_complete(send_agg_record)
 
-    for message in message_stream:
+    for count, message in enumerate(message_stream):
         pk, ehk, data = (
             hashlib.md5(str(message).encode('utf-8')).hexdigest(), None,
             base64.b64encode(
@@ -275,6 +275,9 @@ def publish_to_kinesis(client, streamname, message_stream, batch_size):
             '\n')
 
         kinesis_aggregator.add_user_record(pk, data, ehk)
+
+        if batch_size is not None and count % batch_size == 0:
+            send_agg_record(kinesis_aggregator.clear_and_get())
 
     #Clear out any remaining records that didn't trigger a callback yet
     print("clearing out extra:")
