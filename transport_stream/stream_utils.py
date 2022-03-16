@@ -4,6 +4,7 @@ from datetime import datetime
 import hashlib
 import zlib
 import gzip
+import os
 from functools import partial
 import base64
 import argparse
@@ -15,6 +16,8 @@ import zmq
 import boto3
 import botocore.config
 from botocore.exceptions import ClientError
+import botocore.session
+from botocore import credentials
 
 import aws_kinesis_agg.aggregator
 from aws_kinesis_agg.deaggregator import iter_deaggregate_records
@@ -149,10 +152,17 @@ def fan_out_tags(context, tagged_addresses=[], raw_stream=None):
 
 def get_kinesis_client(profile, region):
     """Instantiate a boto3 Kinesis client for the given region."""
-    session = boto3.Session(profile_name=profile)
-    kinesis_client = session.client('kinesis', region_name=region)
 
-    return kinesis_client
+    cli_cache = os.path.join(os.path.expanduser('~'), '.aws/boto/cache')
+
+    # Construct botocore session with cache
+    session = botocore.session.get_session()
+    session.get_component('credential_provider').get_provider(
+        'assume-role').cache = credentials.JSONFileCache(cli_cache)
+
+    return boto3.Session(
+        botocore_session=session, profile_name=profile).client(
+            'kinesis', region_name=region)
 
 
 def de_aggregate_records(stream_record):
@@ -276,7 +286,8 @@ def publish_to_kinesis(client, streamname, message_stream, batch_size=None):
 
         kinesis_aggregator.add_user_record(pk, data, ehk)
 
-        if batch_size is not None and count % batch_size == 0:
+        if batch_size is not None and count % int(batch_size) == 0:
+            print("batch size reached, sending.")
             send_agg_record(kinesis_aggregator.clear_and_get())
 
     #Clear out any remaining records that didn't trigger a callback yet
