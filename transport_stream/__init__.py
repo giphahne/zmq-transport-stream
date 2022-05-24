@@ -13,11 +13,13 @@ from botocore.exceptions import ClientError
 import argcomplete
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
 from transport_stream.stream_utils import get_kinesis_client
 from transport_stream.stream_utils import publish_to_kinesis
 from transport_stream.stream_utils import yield_kinesis_records
+from transport_stream.stream_utils import yield_shard_event_records
 from transport_stream.stream_utils import subscribe_and_tag
 from transport_stream.stream_utils import encode_elementary_stream_message
 from transport_stream.stream_utils import decode_elementary_stream_message
@@ -35,6 +37,8 @@ def run_service():
     SERVICE_CONFIG_FILE = environ.get('TS_SERVICE_CONFIG_FILE')
     TRANSPORT_STREAM_BATCH_SIZE = environ.get('TRANSPORT_STREAM_BATCH_SIZE',
                                               None)
+    TRANSPORT_STREAM_VERBOSE_MODE = environ.get(
+        'TRANSPORT_STREAM_VERBOSE_MODE', False)
 
     with open(SERVICE_CONFIG_FILE, 'r') as f:
         config = yaml.safe_load(f)
@@ -48,14 +52,15 @@ def run_service():
     kinesis_client = get_kinesis_client(AWS_DEFAULT_PROFILE,
                                         AWS_DEFAULT_REGION)
 
-    if config["mode"] == 'mux':
+    if TRANSPORT_STREAM_VERBOSE_MODE:
 
         def verbose(m):
             print(m)
             return m
-
+    else:
         verbose = lambda x: x
 
+    if config["mode"] == 'mux':
         while True:
             publish_to_kinesis(
                 client=kinesis_client,
@@ -78,8 +83,17 @@ def run_service():
         fan_out.send(None)
 
         while True:
-            for record in yield_kinesis_records(
-                    stream_name=config['stream_name'], client=kinesis_client):
+            for record in map(
+                    verbose,
+                    # yield_kinesis_records(
+                    #     stream_name=config['stream_name'],
+                    #     stream_arn=config.get("stream_arn"),
+                    #     client=kinesis_client)
+                    yield_shard_event_records(
+                        stream_arn=config.get("stream_arn"),
+                        stream_name=config['stream_name'],
+                        client=kinesis_client)):
+
                 if record:
                     #fan_out.send(json.loads(record))
                     fan_out.send(json.loads(json.loads(record.decode())))
@@ -91,19 +105,21 @@ def run_service():
         fan_out.send(None)
 
         while True:
-            for record in yield_kinesis_records(
-                    stream_name=config['stream_name'], client=kinesis_client):
+            for record in map(
+                    verbose,
+                    # yield_kinesis_records(
+                    #     stream_name=config['stream_name'],
+                    #     stream_arn=config.get("stream_arn"),
+                    #     client=kinesis_client)
+                    yield_shard_event_records(
+                        stream_name=config['stream_name'],
+                        stream_arn=config.get("stream_arn"),
+                        client=kinesis_client)):
+
                 if record:
                     fan_out.send(record)
 
     elif config["mode"] == 'pub':
-
-        def verbose(m):
-            print(m)
-            return m
-
-        verbose = lambda x: x
-
         while True:
             publish_to_kinesis(
                 client=kinesis_client,
@@ -119,13 +135,6 @@ def run_service():
             )
 
     if config["mode"] == 'sump':
-
-        def verbose(m):
-            print(m)
-            return m
-
-        verbose = lambda x: x
-
         while True:
             publish_to_kinesis(
                 client=kinesis_client,

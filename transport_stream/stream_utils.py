@@ -4,17 +4,21 @@ from datetime import datetime
 import hashlib
 import zlib
 import gzip
+import os
 from functools import partial
 import base64
 import argparse
 import fileinput
 import sys
 import binascii
+import platform
 
 import zmq
 import boto3
 import botocore.config
 from botocore.exceptions import ClientError
+import botocore.session
+from botocore import credentials
 
 import aws_kinesis_agg.aggregator
 from aws_kinesis_agg.deaggregator import iter_deaggregate_records
@@ -149,10 +153,17 @@ def fan_out_tags(context, tagged_addresses=[], raw_stream=None):
 
 def get_kinesis_client(profile, region):
     """Instantiate a boto3 Kinesis client for the given region."""
-    session = boto3.Session(profile_name=profile)
-    kinesis_client = session.client('kinesis', region_name=region)
 
-    return kinesis_client
+    cli_cache = os.path.join(os.path.expanduser('~'), '.aws/boto/cache')
+
+    # Construct botocore session with cache
+    session = botocore.session.get_session()
+    session.get_component('credential_provider').get_provider(
+        'assume-role').cache = credentials.JSONFileCache(cli_cache)
+
+    return boto3.Session(
+        botocore_session=session, profile_name=profile).client(
+            'kinesis', region_name=region)
 
 
 def de_aggregate_records(stream_record):
@@ -207,20 +218,26 @@ def un_pack_deaggregated_record(user_record):
     return base64.b64decode(user_record['kinesis']['data'])
 
 
-def yield_kinesis_records(client, stream_name):
+def yield_kinesis_records(client, stream_name, stream_arn=None):
     """
     """
 
-    def kinesis_shard_iterator(stream_name, client, IteratorType='LATEST'):
+    def kinesis_shard_iterator(stream_name,
+                               client,
+                               IteratorType='LATEST',
+                               stream_arn=None):
         response = client.describe_stream(StreamName=stream_name)
-        #print(json_dumps(response))
+
+        print(f"describe stream: {json_dumps(response, indent=4)}")
+
         return client.get_shard_iterator(
             StreamName=stream_name,
             ShardId=response['StreamDescription']['Shards'][-1]['ShardId'],
             ShardIteratorType=IteratorType,
         )['ShardIterator']
 
-    iterator = kinesis_shard_iterator(stream_name, client)
+    iterator = kinesis_shard_iterator(
+        stream_name=stream_name, client=client, stream_arn=stream_arn)
 
     record_response = client.get_records(ShardIterator=iterator)
 
@@ -250,6 +267,63 @@ def yield_kinesis_records(client, stream_name):
             break
 
 
+def yield_shard_event_records(client, stream_arn, stream_name=None):
+    """
+    Stream using Enhanced Fan Out
+    """
+
+    def kinesis_shard_event_iterator(client,
+                                     stream_arn=None,
+                                     stream_name=None):
+        describe_response = client.describe_stream(StreamName=stream_name)
+        shard_id = describe_response["StreamDescription"]["Shards"][0][
+            "ShardId"]
+        print(f"describe stream: {json_dumps(describe_response, indent=4)}")
+
+        print(f"consumer name: {platform.node()}")
+
+        try:
+            registeration_response = client.register_stream_consumer(
+                StreamARN=stream_arn, ConsumerName=platform.node())
+
+            print(
+                f"register consumer response: {json_dumps(response, indent=4)}"
+            )
+
+            consumer_arn = registeration_response["Consumer"]["ConsumerARN"]
+        except:
+            print("consumer alread exists, fetching ARN...")
+            consumer_arn = client.describe_stream_consumer(
+                StreamARN=stream_arn, ConsumerName=platform.node()
+            )['ConsumerDescription']['ConsumerARN']
+            print(f"consumerARN: {consumer_arn}")
+
+        response = client.subscribe_to_shard(
+            ConsumerARN=consumer_arn,
+            ShardId=shard_id,
+            StartingPosition={'Type': 'LATEST'})
+
+        return response['EventStream']
+
+    event_stream = kinesis_shard_event_iterator(
+        stream_name=stream_name, client=client, stream_arn=stream_arn)
+
+    for event in event_stream:
+        if 'SubscribeToShardEvent' not in event:
+            print(event)
+            raise Exception
+        else:
+            for user_record in map(
+                    un_pack_deaggregated_record,
+                    iter_deaggregate_records(
+                        map(package_raw_record_for_deaggregation,
+                            event['SubscribeToShardEvent']['Records']))):
+                try:
+                    yield gzip.decompress(base64.b64decode(user_record))
+                except (gzip.BadGzipFile, binascii.Error) as e:
+                    yield user_record
+
+
 def base_send_agg_record(client, streamname, agg_record=None):
     pk, ehk, data = agg_record.get_contents()
     print(f"sending: {pk}")
@@ -276,7 +350,8 @@ def publish_to_kinesis(client, streamname, message_stream, batch_size=None):
 
         kinesis_aggregator.add_user_record(pk, data, ehk)
 
-        if batch_size is not None and count % batch_size == 0:
+        if batch_size is not None and count % int(batch_size) == 0:
+            print("batch size reached, sending.")
             send_agg_record(kinesis_aggregator.clear_and_get())
 
     #Clear out any remaining records that didn't trigger a callback yet
