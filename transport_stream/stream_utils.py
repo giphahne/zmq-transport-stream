@@ -11,6 +11,7 @@ import argparse
 import fileinput
 import sys
 import binascii
+import platform
 
 import zmq
 import boto3
@@ -217,20 +218,26 @@ def un_pack_deaggregated_record(user_record):
     return base64.b64decode(user_record['kinesis']['data'])
 
 
-def yield_kinesis_records(client, stream_name):
+def yield_kinesis_records(client, stream_name, stream_arn=None):
     """
     """
 
-    def kinesis_shard_iterator(stream_name, client, IteratorType='LATEST'):
+    def kinesis_shard_iterator(stream_name,
+                               client,
+                               IteratorType='LATEST',
+                               stream_arn=None):
         response = client.describe_stream(StreamName=stream_name)
-        #print(json_dumps(response))
+
+        print(f"describe stream: {json_dumps(response, indent=4)}")
+
         return client.get_shard_iterator(
             StreamName=stream_name,
             ShardId=response['StreamDescription']['Shards'][-1]['ShardId'],
             ShardIteratorType=IteratorType,
         )['ShardIterator']
 
-    iterator = kinesis_shard_iterator(stream_name, client)
+    iterator = kinesis_shard_iterator(
+        stream_name=stream_name, client=client, stream_arn=stream_arn)
 
     record_response = client.get_records(ShardIterator=iterator)
 
@@ -258,6 +265,63 @@ def yield_kinesis_records(client, stream_name):
         except ClientError as e:
             print("Error iterating Shards: {0}".format(e))
             break
+
+
+def yield_shard_event_records(client, stream_arn, stream_name=None):
+    """
+    Stream using Enhanced Fan Out
+    """
+
+    def kinesis_shard_event_iterator(client,
+                                     stream_arn=None,
+                                     stream_name=None):
+        describe_response = client.describe_stream(StreamName=stream_name)
+        shard_id = describe_response["StreamDescription"]["Shards"][0][
+            "ShardId"]
+        print(f"describe stream: {json_dumps(describe_response, indent=4)}")
+
+        print(f"consumer name: {platform.node()}")
+
+        try:
+            registeration_response = client.register_stream_consumer(
+                StreamARN=stream_arn, ConsumerName=platform.node())
+
+            print(
+                f"register consumer response: {json_dumps(response, indent=4)}"
+            )
+
+            consumer_arn = registeration_response["Consumer"]["ConsumerARN"]
+        except:
+            print("consumer alread exists, fetching ARN...")
+            consumer_arn = client.describe_stream_consumer(
+                StreamARN=stream_arn, ConsumerName=platform.node()
+            )['ConsumerDescription']['ConsumerARN']
+            print(f"consumerARN: {consumer_arn}")
+
+        response = client.subscribe_to_shard(
+            ConsumerARN=consumer_arn,
+            ShardId=shard_id,
+            StartingPosition={'Type': 'LATEST'})
+
+        return response['EventStream']
+
+    event_stream = kinesis_shard_event_iterator(
+        stream_name=stream_name, client=client, stream_arn=stream_arn)
+
+    for event in event_stream:
+        if 'SubscribeToShardEvent' not in event:
+            print(event)
+            raise Exception
+        else:
+            for user_record in map(
+                    un_pack_deaggregated_record,
+                    iter_deaggregate_records(
+                        map(package_raw_record_for_deaggregation,
+                            event['SubscribeToShardEvent']['Records']))):
+                try:
+                    yield gzip.decompress(base64.b64decode(user_record))
+                except (gzip.BadGzipFile, binascii.Error) as e:
+                    yield user_record
 
 
 def base_send_agg_record(client, streamname, agg_record=None):
