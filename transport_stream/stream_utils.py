@@ -12,6 +12,7 @@ import fileinput
 import sys
 import binascii
 import platform
+import socket as libsocket
 
 import zmq
 import boto3
@@ -19,6 +20,7 @@ import botocore.config
 from botocore.exceptions import ClientError
 import botocore.session
 from botocore import credentials
+import requests
 
 import aws_kinesis_agg.aggregator
 from aws_kinesis_agg.deaggregator import iter_deaggregate_records
@@ -267,6 +269,24 @@ def yield_kinesis_records(client, stream_name, stream_arn=None):
             break
 
 
+def get_consumer_name():
+
+    def get_metadata_tag_value(tag):
+        response = requests.get(
+            f'http://169.254.169.254/latest/meta-data/tags/instance/{tag}',
+            timeout=5).content.decode()
+        return response
+
+    try:
+        return '-'.join(
+            list(
+                map(get_metadata_tag_value,
+                    ['Project', 'Environment', 'DeploymentColor'])))
+    except Exception as e:
+        print(e)
+        return libsocket.gethostname()
+
+
 def yield_shard_event_records(client, stream_arn, stream_name=None):
     """
     Stream using Enhanced Fan Out
@@ -280,11 +300,12 @@ def yield_shard_event_records(client, stream_arn, stream_name=None):
             "ShardId"]
         print(f"describe stream: {json_dumps(describe_response, indent=4)}")
 
-        print(f"consumer name: {platform.node()}")
+        consumer_name = get_consumer_name()
+        print(f"consumer name: {consumer_name}")
 
         try:
             registeration_response = client.register_stream_consumer(
-                StreamARN=stream_arn, ConsumerName=platform.node())
+                StreamARN=stream_arn, ConsumerName=consumer_name)
 
             print(
                 f"register consumer response: {json_dumps(response, indent=4)}"
@@ -294,7 +315,7 @@ def yield_shard_event_records(client, stream_arn, stream_name=None):
         except:
             print("consumer alread exists, fetching ARN...")
             consumer_arn = client.describe_stream_consumer(
-                StreamARN=stream_arn, ConsumerName=platform.node()
+                StreamARN=stream_arn, ConsumerName=consumer_name
             )['ConsumerDescription']['ConsumerARN']
             print(f"consumerARN: {consumer_arn}")
 

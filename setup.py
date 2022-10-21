@@ -9,7 +9,7 @@ with open(path.join(here, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name='zmq_transport_stream',
-    version='0.2.0',
+    version='0.2.1',
     description='(de-)/mux ØMQ sockets over a kinesis trasport stream',
     url='https://collinsaerospace.com',
     author='Dan Hahne',
@@ -20,6 +20,9 @@ setup(
         'Topic :: Software Development :: System Tools',
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.7',
+        'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3.10',
     ],
     install_requires=[
         'boto3',
@@ -29,6 +32,7 @@ setup(
         'python-dotenv',
         'kinesis-python',
         'aws_kinesis_agg',
+        'requests',
     ],
     packages=find_packages(exclude=['contrib', 'docs', 'tests']),
     entry_points={
