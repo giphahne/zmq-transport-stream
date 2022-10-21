@@ -13,6 +13,8 @@ import sys
 import binascii
 import platform
 import socket as libsocket
+import urllib.request
+from urllib.error import URLError
 
 import zmq
 import boto3
@@ -272,10 +274,9 @@ def yield_kinesis_records(client, stream_name, stream_arn=None):
 def get_consumer_name():
 
     def get_metadata_tag_value(tag):
-        response = requests.get(
+        return requests.get(
             f'http://169.254.169.254/latest/meta-data/tags/instance/{tag}',
-            timeout=5).content.decode()
-        return response
+            timeout=3).read().decode()
 
     try:
         return '-'.join(
@@ -283,7 +284,18 @@ def get_consumer_name():
                 map(get_metadata_tag_value,
                     ['Project', 'Environment', 'DeploymentColor'])))
     except Exception as e:
-        print(e)
+        # fallback to using instance ID
+        print("failed to fetch EC2 metadata tags...")
+        pass
+
+    try:
+        return requests.get(
+            'http://169.254.169.254/latest/meta-data/instance-id',
+            timeout=3).read().decode()
+
+    except Exception as e:
+        # fallback to using hostname:
+        print("failed to fetch EC2 instance-id, using hostname")
         return libsocket.gethostname()
 
 
