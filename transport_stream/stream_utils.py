@@ -276,7 +276,7 @@ def get_consumer_name():
     def get_metadata_tag_value(tag):
         return requests.get(
             f'http://169.254.169.254/latest/meta-data/tags/instance/{tag}',
-            timeout=3).read().decode()
+            timeout=3).content.decode()
 
     try:
         return '-'.join(
@@ -291,7 +291,7 @@ def get_consumer_name():
     try:
         return requests.get(
             'http://169.254.169.254/latest/meta-data/instance-id',
-            timeout=3).read().decode()
+            timeout=3).content.decode()
 
     except Exception as e:
         # fallback to using hostname:
