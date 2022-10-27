@@ -26,7 +26,7 @@ setup(
     ],
     install_requires=[
         'boto3',
-        'zmq',
+        'pyzmq',
         'argcomplete',
         'pyyaml',
         'python-dotenv',
