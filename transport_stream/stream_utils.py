@@ -27,12 +27,11 @@ import requests
 import aws_kinesis_agg.aggregator
 from aws_kinesis_agg.deaggregator import iter_deaggregate_records
 
-TIMESTAMP_FORMAT = '%Y-%m-%d %H:%M:%S.%fZ'
-TIMEONLY_FORMAT = '%H:%M:%S'
+TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S.%fZ"
+TIMEONLY_FORMAT = "%H:%M:%S"
 
 
 class JSONItemEncoder(json.JSONEncoder):
-
     def default(self, obj):
         if isinstance(obj, datetime):
             return obj.strftime(TIMESTAMP_FORMAT)
@@ -47,8 +46,7 @@ class JSONItemEncoder(json.JSONEncoder):
 
 
 def json_dumps(obj, indent=None, sort_keys=False):
-    return json.dumps(
-        obj, cls=JSONItemEncoder, indent=indent, sort_keys=sort_keys)
+    return json.dumps(obj, cls=JSONItemEncoder, indent=indent, sort_keys=sort_keys)
 
 
 def encode_elementary_stream_message(message):
@@ -87,7 +85,6 @@ def subscribe_and_tag(context, tagged_addresses, subscriptions="", bind=False):
     tag_dict = {}
 
     for tag, address in tagged_addresses:
-
         if bind:
             print("binding to {}, with tag: {}".format(address, tag))
         else:
@@ -149,25 +146,26 @@ def fan_out_tags(context, tagged_addresses=[], raw_stream=None):
             tag_dict["raw"].send(message)
 
         else:
-            #print(message[0])
-            #print(message[1])
-            #print(message)
+            # print(message[0])
+            # print(message[1])
+            # print(message)
             tag_dict[message[0]].send(message[1].encode())
 
 
 def get_kinesis_client(profile, region):
     """Instantiate a boto3 Kinesis client for the given region."""
 
-    cli_cache = os.path.join(os.path.expanduser('~'), '.aws/boto/cache')
+    cli_cache = os.path.join(os.path.expanduser("~"), ".aws/boto/cache")
 
     # Construct botocore session with cache
     session = botocore.session.get_session()
-    session.get_component('credential_provider').get_provider(
-        'assume-role').cache = credentials.JSONFileCache(cli_cache)
+    session.get_component("credential_provider").get_provider(
+        "assume-role"
+    ).cache = credentials.JSONFileCache(cli_cache)
 
-    return boto3.Session(
-        botocore_session=session, profile_name=profile).client(
-            'kinesis', region_name=region)
+    return boto3.Session(botocore_session=session, profile_name=profile).client(
+        "kinesis", region_name=region
+    )
 
 
 def de_aggregate_records(stream_record):
@@ -201,67 +199,79 @@ def package_raw_record_for_deaggregation(stream_record):
     return {
         "kinesis": {
             "kinesisSchemaVersion": "1.0",
-            #"partitionKey": "1",
+            # "partitionKey": "1",
             "sequenceNumber": "<stub>",
-            #"data": stream_record['Data'],
-            "data": base64.b64encode(stream_record['Data']),
-            "approximateArrivalTimestamp": 0
+            # "data": stream_record['Data'],
+            "data": base64.b64encode(stream_record["Data"]),
+            "approximateArrivalTimestamp": 0,
         },
         #        "kinesis": stream_record,
-        #"eventSource": "aws:kinesis",
-        #"eventVersion": "1.0",
-        #"eventID": "shardId-000000000006:4959033827989136588898...",
-        #"eventName": "aws:kinesis:record",
-        #"invokeIdentityArn": "<ARN>",
-        #"awsRegion": "us-east-2",
-        #"eventSourceARN": "<ARN>"
+        # "eventSource": "aws:kinesis",
+        # "eventVersion": "1.0",
+        # "eventID": "shardId-000000000006:4959033827989136588898...",
+        # "eventName": "aws:kinesis:record",
+        # "invokeIdentityArn": "<ARN>",
+        # "awsRegion": "us-east-2",
+        # "eventSourceARN": "<ARN>"
     }
 
 
 def un_pack_deaggregated_record(user_record):
-    return base64.b64decode(user_record['kinesis']['data'])
+    return base64.b64decode(user_record["kinesis"]["data"])
 
 
 def yield_kinesis_records(client, stream_name, stream_arn=None):
-    """
-    """
+    """ """
 
-    def kinesis_shard_iterator(stream_name,
-                               client,
-                               IteratorType='LATEST',
-                               stream_arn=None):
+    def kinesis_shard_iterator(
+        stream_name, client, IteratorType="LATEST", stream_arn=None
+    ):
         response = client.describe_stream(StreamName=stream_name)
 
         print(f"describe stream: {json_dumps(response, indent=4)}")
 
+        shard_id = next(
+            filter(
+                lambda x: x.get("SequenceNumberRange", {}).get(
+                    "EndingSequenceNumber", "NO_ENDING_SEQUENCE_NUMBER"
+                )
+                == "NO_ENDING_SEQUENCE_NUMBER",
+                response["StreamDescription"]["Shards"],
+            )
+        )["ShardId"]
+
         shard_iterator = client.get_shard_iterator(
             StreamName=stream_name,
-            ShardId=response['StreamDescription']['Shards'][-1]['ShardId'],
-            #ShardId="shardId-000000000000",
+            ShardId=shard_id,
             ShardIteratorType=IteratorType,
-        )['ShardIterator']
+        )["ShardIterator"]
         print("got shard iterator:")
         print(shard_iterator)
         print("*******************")
         return shard_iterator
 
     iterator = kinesis_shard_iterator(
-        stream_name=stream_name, client=client, stream_arn=stream_arn)
+        stream_name=stream_name, client=client, stream_arn=stream_arn
+    )
 
     record_response = client.get_records(ShardIterator=iterator)
 
-    while 'NextShardIterator' in record_response:
+    while "NextShardIterator" in record_response:
         try:
             record_response = client.get_records(
-                ShardIterator=record_response['NextShardIterator'])
+                ShardIterator=record_response["NextShardIterator"]
+            )
 
-            if record_response['Records']:
+            if record_response["Records"]:
                 for user_record in map(
-                        un_pack_deaggregated_record,
-                        iter_deaggregate_records(
-                            map(package_raw_record_for_deaggregation,
-                                record_response['Records']))):
-
+                    un_pack_deaggregated_record,
+                    iter_deaggregate_records(
+                        map(
+                            package_raw_record_for_deaggregation,
+                            record_response["Records"],
+                        )
+                    ),
+                ):
                     try:
                         yield gzip.decompress(base64.b64decode(user_record))
                     except (gzip.BadGzipFile, binascii.Error) as e:
@@ -277,17 +287,20 @@ def yield_kinesis_records(client, stream_name, stream_arn=None):
 
 
 def get_consumer_name():
-
     def get_metadata_tag_value(tag):
         return requests.get(
-            f'http://169.254.169.254/latest/meta-data/tags/instance/{tag}',
-            timeout=3).content.decode()
+            f"http://169.254.169.254/latest/meta-data/tags/instance/{tag}", timeout=3
+        ).content.decode()
 
     try:
-        return '-'.join(
+        return "-".join(
             list(
-                map(get_metadata_tag_value,
-                    ['Project', 'Environment', 'DeploymentColor'])))
+                map(
+                    get_metadata_tag_value,
+                    ["Project", "Environment", "DeploymentColor"],
+                )
+            )
+        )
     except Exception as e:
         # fallback to using instance ID
         print("failed to fetch EC2 metadata tags...")
@@ -295,8 +308,8 @@ def get_consumer_name():
 
     try:
         return requests.get(
-            'http://169.254.169.254/latest/meta-data/instance-id',
-            timeout=3).content.decode()
+            "http://169.254.169.254/latest/meta-data/instance-id", timeout=3
+        ).content.decode()
 
     except Exception as e:
         # fallback to using hostname:
@@ -309,12 +322,71 @@ def yield_shard_event_records(client, stream_arn, stream_name=None):
     Stream using Enhanced Fan Out
     """
 
-    def kinesis_shard_event_iterator(client,
-                                     stream_arn=None,
-                                     stream_name=None):
+    def kinesis_shard_event_iterator(client, stream_arn=None, stream_name=None):
+        """
+        "Shards": [
+            {
+                "ShardId": "shardId-000000000000",
+                "HashKeyRange": {
+                    "StartingHashKey": "0",
+                    "EndingHashKey": "340282366920938463463374607431768211455"
+                },
+                "SequenceNumberRange": {
+                    "StartingSequenceNumber": "49609778095343646355337956397435936009430583510030090242",
+                    "EndingSequenceNumber": "49646355163556106869274729768788754436714702200591351810"
+                }
+            },
+            {
+                "ShardId": "shardId-000000000001",
+                "ParentShardId": "shardId-000000000000",
+                "HashKeyRange": {
+                    "StartingHashKey": "0",
+                    "EndingHashKey": "170141183460469231731687303715884105727"
+                },
+                "SequenceNumberRange": {
+                    "StartingSequenceNumber": "49646490658970152358998813378474669417129039791193587730",
+                    "EndingSequenceNumber": "49646490658981302731598078690044228350446162896582869010"
+                }
+            },
+            {
+                "ShardId": "shardId-000000000002",
+                "ParentShardId": "shardId-000000000000",
+                "HashKeyRange": {
+                    "StartingHashKey": "170141183460469231731687303715884105728",
+                    "EndingHashKey": "340282366920938463463374607431768211455"
+                },
+                "SequenceNumberRange": {
+                    "StartingSequenceNumber": "49646490658992453104197344001616205135401688152699568162",
+                    "EndingSequenceNumber": "49646490659003603476796609313185764068718811258088849442"
+                }
+            },
+            {
+                "ShardId": "shardId-000000000003",
+                "ParentShardId": "shardId-000000000001",
+                "AdjacentParentShardId": "shardId-000000000002",
+                "HashKeyRange": {
+                    "StartingHashKey": "0",
+                    "EndingHashKey": "340282366920938463463374607431768211455"
+                },
+                "SequenceNumberRange": {
+                    "StartingSequenceNumber": "49646492806665719448689005647213553382802556608674005042"
+                }
+            }
+        ],
+
+        """
+
         describe_response = client.describe_stream(StreamName=stream_name)
-        shard_id = describe_response["StreamDescription"]["Shards"][-1][
-            "ShardId"]
+        shard_id = next(
+            filter(
+                lambda x: x.get("SequenceNumberRange", {}).get(
+                    "EndingSequenceNumber", "NO_ENDING_SEQUENCE_NUMBER"
+                )
+                == "NO_ENDING_SEQUENCE_NUMBER",
+                describe_response["StreamDescription"]["Shards"],
+            )
+        )["ShardId"]
+
         print(f"describe stream: {json_dumps(describe_response, indent=4)}")
         print(f"consuming from shardId: {shard_id}...")
 
@@ -323,40 +395,45 @@ def yield_shard_event_records(client, stream_arn, stream_name=None):
 
         try:
             registeration_response = client.register_stream_consumer(
-                StreamARN=stream_arn, ConsumerName=consumer_name)
-
-            print(
-                f"register consumer response: {json_dumps(response, indent=4)}"
+                StreamARN=stream_arn, ConsumerName=consumer_name
             )
+
+            print(f"register consumer response: {json_dumps(response, indent=4)}")
 
             consumer_arn = registeration_response["Consumer"]["ConsumerARN"]
         except:
             print("consumer alread exists, fetching ARN...")
             consumer_arn = client.describe_stream_consumer(
                 StreamARN=stream_arn, ConsumerName=consumer_name
-            )['ConsumerDescription']['ConsumerARN']
+            )["ConsumerDescription"]["ConsumerARN"]
             print(f"consumerARN: {consumer_arn}")
 
         response = client.subscribe_to_shard(
             ConsumerARN=consumer_arn,
             ShardId=shard_id,
-            StartingPosition={'Type': 'LATEST'})
+            StartingPosition={"Type": "LATEST"},
+        )
 
-        return response['EventStream']
+        return response["EventStream"]
 
     event_stream = kinesis_shard_event_iterator(
-        stream_name=stream_name, client=client, stream_arn=stream_arn)
+        stream_name=stream_name, client=client, stream_arn=stream_arn
+    )
 
     for event in event_stream:
-        if 'SubscribeToShardEvent' not in event:
+        if "SubscribeToShardEvent" not in event:
             print(event)
             raise Exception
         else:
             for user_record in map(
-                    un_pack_deaggregated_record,
-                    iter_deaggregate_records(
-                        map(package_raw_record_for_deaggregation,
-                            event['SubscribeToShardEvent']['Records']))):
+                un_pack_deaggregated_record,
+                iter_deaggregate_records(
+                    map(
+                        package_raw_record_for_deaggregation,
+                        event["SubscribeToShardEvent"]["Records"],
+                    )
+                ),
+            ):
                 try:
                     yield gzip.decompress(base64.b64decode(user_record))
                 except (gzip.BadGzipFile, binascii.Error) as e:
@@ -371,8 +448,7 @@ def base_send_agg_record(client, streamname, agg_record=None):
 
 
 def publish_to_kinesis(client, streamname, message_stream, batch_size=None):
-    """
-    """
+    """ """
 
     kinesis_aggregator = aws_kinesis_agg.aggregator.RecordAggregator()
 
@@ -381,11 +457,13 @@ def publish_to_kinesis(client, streamname, message_stream, batch_size=None):
 
     for count, message in enumerate(message_stream):
         pk, ehk, data = (
-            hashlib.md5(str(message).encode('utf-8')).hexdigest(), None,
-            base64.b64encode(
-                gzip.compress(
-                    json_dumps(message).encode('utf-8'))).decode('utf-8') +
-            '\n')
+            hashlib.md5(str(message).encode("utf-8")).hexdigest(),
+            None,
+            base64.b64encode(gzip.compress(json_dumps(message).encode("utf-8"))).decode(
+                "utf-8"
+            )
+            + "\n",
+        )
 
         kinesis_aggregator.add_user_record(pk, data, ehk)
 
@@ -393,7 +471,7 @@ def publish_to_kinesis(client, streamname, message_stream, batch_size=None):
             print("batch size reached, sending.")
             send_agg_record(kinesis_aggregator.clear_and_get())
 
-    #Clear out any remaining records that didn't trigger a callback yet
+    # Clear out any remaining records that didn't trigger a callback yet
     print("clearing out extra:")
     send_agg_record(kinesis_aggregator.clear_and_get())
 
@@ -413,9 +491,8 @@ def unpack_stream_record():
     try:
         with fileinput.input(args.files) as f:
             for l in f:
-                sys.stdout.write(
-                    gzip.decompress(base64.b64decode(l)).decode('utf-8'))
-                sys.stdout.write('\n')
+                sys.stdout.write(gzip.decompress(base64.b64decode(l)).decode("utf-8"))
+                sys.stdout.write("\n")
 
     except (BrokenPipeError, IOError, StopIteration) as e:
         pass
