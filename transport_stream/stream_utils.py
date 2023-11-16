@@ -234,11 +234,16 @@ def yield_kinesis_records(client, stream_name, stream_arn=None):
 
         print(f"describe stream: {json_dumps(response, indent=4)}")
 
-        return client.get_shard_iterator(
+        shard_iterator = client.get_shard_iterator(
             StreamName=stream_name,
             ShardId=response['StreamDescription']['Shards'][-1]['ShardId'],
+            #ShardId="shardId-000000000000",
             ShardIteratorType=IteratorType,
         )['ShardIterator']
+        print("got shard iterator:")
+        print(shard_iterator)
+        print("*******************")
+        return shard_iterator
 
     iterator = kinesis_shard_iterator(
         stream_name=stream_name, client=client, stream_arn=stream_arn)
@@ -264,7 +269,7 @@ def yield_kinesis_records(client, stream_name, stream_arn=None):
 
             else:
                 # ReadthroughputExceed
-                time.sleep(0.33333)
+                time.sleep(1.33333)
 
         except ClientError as e:
             print("Error iterating Shards: {0}".format(e))
@@ -308,9 +313,10 @@ def yield_shard_event_records(client, stream_arn, stream_name=None):
                                      stream_arn=None,
                                      stream_name=None):
         describe_response = client.describe_stream(StreamName=stream_name)
-        shard_id = describe_response["StreamDescription"]["Shards"][0][
+        shard_id = describe_response["StreamDescription"]["Shards"][-1][
             "ShardId"]
         print(f"describe stream: {json_dumps(describe_response, indent=4)}")
+        print(f"consuming from shardId: {shard_id}...")
 
         consumer_name = get_consumer_name()
         print(f"consumer name: {consumer_name}")
