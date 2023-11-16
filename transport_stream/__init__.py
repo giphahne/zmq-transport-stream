@@ -27,78 +27,83 @@ from transport_stream.stream_utils import fan_out_tags
 
 
 def run_service():
-    """
-    """
+    """ """
 
     # General Config
-    AWS_DEFAULT_REGION = environ.get('AWS_DEFAULT_REGION')
-    AWS_DEFAULT_PROFILE = environ.get('AWS_DEFAULT_PROFILE')
+    AWS_DEFAULT_REGION = environ.get("AWS_DEFAULT_REGION")
+    AWS_DEFAULT_PROFILE = environ.get("AWS_DEFAULT_PROFILE")
 
-    SERVICE_CONFIG_FILE = environ.get('TS_SERVICE_CONFIG_FILE')
-    TRANSPORT_STREAM_BATCH_SIZE = environ.get('TRANSPORT_STREAM_BATCH_SIZE',
-                                              None)
-    TRANSPORT_STREAM_VERBOSE_MODE = environ.get(
-        'TRANSPORT_STREAM_VERBOSE_MODE', False)
+    SERVICE_CONFIG_FILE = environ.get("TS_SERVICE_CONFIG_FILE")
+    TRANSPORT_STREAM_BATCH_SIZE = environ.get("TRANSPORT_STREAM_BATCH_SIZE", None)
+    TRANSPORT_STREAM_VERBOSE_MODE = environ.get("TRANSPORT_STREAM_VERBOSE_MODE", False)
 
-    with open(SERVICE_CONFIG_FILE, 'r') as f:
+    with open(SERVICE_CONFIG_FILE, "r") as f:
         config = yaml.safe_load(f)
 
     context = zmq.Context()
 
-    print(AWS_DEFAULT_REGION, AWS_DEFAULT_PROFILE, SERVICE_CONFIG_FILE,
-          TRANSPORT_STREAM_BATCH_SIZE)
+    print(
+        AWS_DEFAULT_REGION,
+        AWS_DEFAULT_PROFILE,
+        SERVICE_CONFIG_FILE,
+        TRANSPORT_STREAM_BATCH_SIZE,
+    )
     print(config)
 
-    kinesis_client = get_kinesis_client(AWS_DEFAULT_PROFILE,
-                                        AWS_DEFAULT_REGION)
+    kinesis_client = get_kinesis_client(AWS_DEFAULT_PROFILE, AWS_DEFAULT_REGION)
 
     if TRANSPORT_STREAM_VERBOSE_MODE:
 
         def verbose(m):
             print(m)
             return m
+
     else:
         verbose = lambda x: x
 
-    if config["mode"] == 'mux':
+    if config["mode"] == "mux":
         while True:
             publish_to_kinesis(
                 client=kinesis_client,
-                streamname=config['stream_name'],
+                streamname=config["stream_name"],
                 message_stream=map(
                     verbose,
                     map(
                         encode_elementary_stream_message,
                         subscribe_and_tag(
                             context=context,
-                            tagged_addresses=config['elementary_streams']))),
+                            tagged_addresses=config["elementary_streams"],
+                        ),
+                    ),
+                ),
                 batch_size=TRANSPORT_STREAM_BATCH_SIZE,
             )
 
-    elif config["mode"] == 'demux':
-        fan_out = fan_out_tags(
-            context, tagged_addresses=config['elementary_streams'])
+    elif config["mode"] == "demux":
+        fan_out = fan_out_tags(context, tagged_addresses=config["elementary_streams"])
 
         # advance the fan_out_tags generator to the ``yield '' statement
         fan_out.send(None)
 
         while True:
             for record in map(
-                    verbose,
-                    # yield_kinesis_records(
-                    #     stream_name=config['stream_name'],
-                    #     stream_arn=config.get("stream_arn"),
-                    #     client=kinesis_client)
-                    yield_shard_event_records(
-                        stream_arn=config.get("stream_arn"),
-                        stream_name=config['stream_name'],
-                        client=kinesis_client)):
+                verbose,
+                yield_kinesis_records(
+                    stream_name=config["stream_name"],
+                    stream_arn=config.get("stream_arn"),
+                    client=kinesis_client,
+                ),
+            ):
+                # yield_shard_event_records(
+                #     stream_arn=config.get("stream_arn"),
+                #     stream_name=config['stream_name'],
+                #     client=kinesis_client)):
 
                 if record:
-                    #fan_out.send(json.loads(record))
+                    # fan_out.send(json.loads(record))
                     fan_out.send(json.loads(json.loads(record.decode())))
 
-    elif config["mode"] == 'raw':
+    elif config["mode"] == "raw":
         fan_out = fan_out_tags(context, raw_stream=config["raw_stream"])
 
         # advance the fan_out_tags generator to the ``yield '' statement
@@ -106,47 +111,54 @@ def run_service():
 
         while True:
             for record in map(
-                    verbose,
-                    # yield_kinesis_records(
-                    #     stream_name=config['stream_name'],
-                    #     stream_arn=config.get("stream_arn"),
-                    #     client=kinesis_client)
-                    yield_shard_event_records(
-                        stream_name=config['stream_name'],
-                        stream_arn=config.get("stream_arn"),
-                        client=kinesis_client)):
-
+                verbose,
+                # yield_kinesis_records(
+                #     stream_name=config['stream_name'],
+                #     stream_arn=config.get("stream_arn"),
+                #     client=kinesis_client)
+                yield_shard_event_records(
+                    stream_name=config["stream_name"],
+                    stream_arn=config.get("stream_arn"),
+                    client=kinesis_client,
+                ),
+            ):
                 if record:
                     fan_out.send(record)
 
-    elif config["mode"] == 'pub':
+    elif config["mode"] == "pub":
         while True:
             publish_to_kinesis(
                 client=kinesis_client,
-                streamname=config['stream_name'],
+                streamname=config["stream_name"],
                 message_stream=map(
                     verbose,
                     map(
                         lambda x: x[1],
                         subscribe_and_tag(
                             context=context,
-                            tagged_addresses=config['elementary_streams']))),
+                            tagged_addresses=config["elementary_streams"],
+                        ),
+                    ),
+                ),
                 batch_size=TRANSPORT_STREAM_BATCH_SIZE,
             )
 
-    if config["mode"] == 'sump':
+    if config["mode"] == "sump":
         while True:
             publish_to_kinesis(
                 client=kinesis_client,
-                streamname=config['stream_name'],
+                streamname=config["stream_name"],
                 message_stream=map(
                     verbose,
                     map(
                         lambda x: f"{x[1]}\n",
                         subscribe_and_tag(
                             context=context,
-                            tagged_addresses=config['elementary_streams'],
-                            bind=True))),
+                            tagged_addresses=config["elementary_streams"],
+                            bind=True,
+                        ),
+                    ),
+                ),
                 batch_size=TRANSPORT_STREAM_BATCH_SIZE,
             )
 
