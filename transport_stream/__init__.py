@@ -85,20 +85,21 @@ def run_service():
         # advance the fan_out_tags generator to the ``yield '' statement
         fan_out.send(None)
 
+        if config.get("kinesis_source_type", "ENHANCED_FAN_OUT") == "ENHANCED_FAN_OUT":
+            kinesis_iterator = yield_shard_event_records
+
+        elif config.get("kinesis_source_type", "ENHANCED_FAN_OUT") == "BASE_STREAM":
+            kinesis_iterator = yield_kinesis_records
+
         while True:
             for record in map(
                 verbose,
-                yield_kinesis_records(
-                    stream_name=config["stream_name"],
+                kinesis_iterator(
                     stream_arn=config.get("stream_arn"),
+                    stream_name=config["stream_name"],
                     client=kinesis_client,
                 ),
             ):
-                # yield_shard_event_records(
-                #     stream_arn=config.get("stream_arn"),
-                #     stream_name=config['stream_name'],
-                #     client=kinesis_client)):
-
                 if record:
                     # fan_out.send(json.loads(record))
                     fan_out.send(json.loads(json.loads(record.decode())))
@@ -109,16 +110,18 @@ def run_service():
         # advance the fan_out_tags generator to the ``yield '' statement
         fan_out.send(None)
 
+        if config.get("kinesis_source_type", "ENHANCED_FAN_OUT") == "ENHANCED_FAN_OUT":
+            kinesis_iterator = yield_shard_event_records
+
+        elif config.get("kinesis_source_type", "ENHANCED_FAN_OUT") == "BASE_STREAM":
+            kinesis_iterator = yield_kinesis_records
+
         while True:
             for record in map(
                 verbose,
-                # yield_kinesis_records(
-                #     stream_name=config['stream_name'],
-                #     stream_arn=config.get("stream_arn"),
-                #     client=kinesis_client)
-                yield_shard_event_records(
-                    stream_name=config["stream_name"],
+                kinesis_iterator(
                     stream_arn=config.get("stream_arn"),
+                    stream_name=config["stream_name"],
                     client=kinesis_client,
                 ),
             ):
