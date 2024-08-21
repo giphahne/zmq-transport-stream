@@ -57,7 +57,9 @@ def decode_elementary_stream_message(message):
     return json.loads(message)
 
 
-def subscribe_and_tag(context, tagged_addresses, subscriptions="", bind=False):
+def subscribe_and_tag(
+    context, tagged_addresses, subscriptions="", bind=False, pull=False
+):
     """This allows you to subscribe to one or more addresses and subscribe
     to multiple 'feeds'. The generator returns a tuple.  The first is
     the tag that is associated with the address the message came from.
@@ -90,13 +92,15 @@ def subscribe_and_tag(context, tagged_addresses, subscriptions="", bind=False):
         else:
             print("connecting to {}, with tag: {}".format(address, tag))
 
-        socket = context.socket(zmq.SUB)
-
-        for subscription in subscriptions:
-            try:
-                socket.setsockopt_string(zmq.SUBSCRIBE, unicode(subscription))
-            except NameError:
-                socket.setsockopt_string(zmq.SUBSCRIBE, subscription)
+        if pull:
+            socket = context.socket(zmq.PULL)
+        else:
+            socket = context.socket(zmq.SUB)
+            for subscription in subscriptions:
+                try:
+                    socket.setsockopt_string(zmq.SUBSCRIBE, unicode(subscription))
+                except NameError:
+                    socket.setsockopt_string(zmq.SUBSCRIBE, subscription)
 
         socket.setsockopt(zmq.RCVHWM, 90000)
 
@@ -159,9 +163,9 @@ def get_kinesis_client(profile, region):
 
     # Construct botocore session with cache
     session = botocore.session.get_session()
-    session.get_component("credential_provider").get_provider(
-        "assume-role"
-    ).cache = credentials.JSONFileCache(cli_cache)
+    session.get_component("credential_provider").get_provider("assume-role").cache = (
+        credentials.JSONFileCache(cli_cache)
+    )
 
     return boto3.Session(botocore_session=session, profile_name=profile).client(
         "kinesis", region_name=region
@@ -224,21 +228,23 @@ def yield_kinesis_records(client, stream_name, stream_arn=None):
     """ """
 
     def kinesis_shard_iterator(
-        stream_name, client, IteratorType="LATEST", stream_arn=None
+        stream_name, client, IteratorType="LATEST", stream_arn=None, shard_id=None
     ):
         response = client.describe_stream(StreamName=stream_name)
 
         print(f"describe stream: {json_dumps(response, indent=4)}")
 
-        shard_id = next(
-            filter(
-                lambda x: x.get("SequenceNumberRange", {}).get(
-                    "EndingSequenceNumber", "NO_ENDING_SEQUENCE_NUMBER"
+        # fmt: off
+        shard_id = shard_id if shard_id is not None else next(
+                filter(
+                    lambda x: x.get("SequenceNumberRange", {}).get(
+                        "EndingSequenceNumber", "NO_ENDING_SEQUENCE_NUMBER"
+                    )
+                    == "NO_ENDING_SEQUENCE_NUMBER",
+                    response["StreamDescription"]["Shards"],
                 )
-                == "NO_ENDING_SEQUENCE_NUMBER",
-                response["StreamDescription"]["Shards"],
-            )
-        )["ShardId"]
+            )["ShardId"]
+        # fmt: on
 
         shard_iterator = client.get_shard_iterator(
             StreamName=stream_name,
@@ -440,11 +446,24 @@ def yield_shard_event_records(client, stream_arn, stream_name=None):
                     yield user_record
 
 
-def base_send_agg_record(client, streamname, agg_record=None):
+def base_send_agg_record(client, streamname, agg_record=None, retries=2):
     pk, ehk, data = agg_record.get_contents()
-    print(f"sending: {pk}")
 
-    client.put_record(StreamName=streamname, Data=data, PartitionKey=pk)
+    r = 1
+    while r <= retries:
+        try:
+            print(f"sending: {pk}")
+            sys.stdout.flush()
+            client.put_record(StreamName=streamname, Data=data, PartitionKey=pk)
+            return
+        except ConnectionRefusedError as e:
+            print(f"got ConnectionRefusedError, retrying")
+            sys.stdout.flush()
+            r += 1
+            time.sleep(1)
+    print("retry attempts exceeded!, moving on")
+    sys.stdout.flush()
+    return
 
 
 def publish_to_kinesis(client, streamname, message_stream, batch_size=None):
