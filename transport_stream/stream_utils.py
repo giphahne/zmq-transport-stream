@@ -220,25 +220,37 @@ def un_pack_deaggregated_record(user_record):
     return base64.b64decode(user_record["kinesis"]["data"])
 
 
-def yield_kinesis_records(client, stream_name, stream_arn=None):
-    """ """
+def list_open_shard_ids(client, stream_name):
+    """Return the ids of all shards in the stream that have not been closed
+    (i.e. have no ``EndingSequenceNumber``)."""
+
+    shards = []
+    kwargs = {"StreamName": stream_name}
+    while True:
+        description = client.describe_stream(**kwargs)["StreamDescription"]
+        shards.extend(description["Shards"])
+        if not description.get("HasMoreShards"):
+            break
+        kwargs["ExclusiveStartShardId"] = shards[-1]["ShardId"]
+
+    return [
+        shard["ShardId"]
+        for shard in shards
+        if "EndingSequenceNumber" not in shard.get("SequenceNumberRange", {})
+    ]
+
+
+def yield_kinesis_records(client, stream_name, stream_arn=None, shard_id=None):
+    """
+    Poll a single shard of the base stream.  If ``shard_id`` is not given,
+    the first open shard is used.
+    """
 
     def kinesis_shard_iterator(
-        stream_name, client, IteratorType="LATEST", stream_arn=None
+        stream_name, client, IteratorType="LATEST", stream_arn=None, shard_id=None
     ):
-        response = client.describe_stream(StreamName=stream_name)
-
-        print(f"describe stream: {json_dumps(response, indent=4)}")
-
-        shard_id = next(
-            filter(
-                lambda x: x.get("SequenceNumberRange", {}).get(
-                    "EndingSequenceNumber", "NO_ENDING_SEQUENCE_NUMBER"
-                )
-                == "NO_ENDING_SEQUENCE_NUMBER",
-                response["StreamDescription"]["Shards"],
-            )
-        )["ShardId"]
+        if shard_id is None:
+            shard_id = list_open_shard_ids(client, stream_name)[0]
 
         shard_iterator = client.get_shard_iterator(
             StreamName=stream_name,
@@ -251,7 +263,7 @@ def yield_kinesis_records(client, stream_name, stream_arn=None):
         return shard_iterator
 
     iterator = kinesis_shard_iterator(
-        stream_name=stream_name, client=client, stream_arn=stream_arn
+        stream_name=stream_name, client=client, stream_arn=stream_arn, shard_id=shard_id
     )
 
     record_response = client.get_records(ShardIterator=iterator)
@@ -317,13 +329,55 @@ def get_consumer_name():
         return libsocket.gethostname()
 
 
-def yield_shard_event_records(client, stream_arn, stream_name=None):
+def get_consumer_arn(client, stream_arn, timeout=120):
     """
-    Stream using Enhanced Fan Out
+    Register (or look up) this host's Enhanced Fan Out consumer and wait for
+    it to become ACTIVE.
     """
 
-    def kinesis_shard_event_iterator(client, stream_arn=None, stream_name=None):
-        """
+    consumer_name = get_consumer_name()
+    print(f"consumer name: {consumer_name}")
+
+    try:
+        registration_response = client.register_stream_consumer(
+            StreamARN=stream_arn, ConsumerName=consumer_name
+        )
+        print(
+            f"register consumer response: {json_dumps(registration_response, indent=4)}"
+        )
+    except client.exceptions.ResourceInUseException:
+        print("consumer already exists, fetching ARN...")
+
+    deadline = time.time() + timeout
+    while True:
+        consumer = client.describe_stream_consumer(
+            StreamARN=stream_arn, ConsumerName=consumer_name
+        )["ConsumerDescription"]
+
+        if consumer["ConsumerStatus"] == "ACTIVE":
+            print(f"consumerARN: {consumer['ConsumerARN']}")
+            return consumer["ConsumerARN"]
+
+        if time.time() > deadline:
+            raise TimeoutError(
+                f"consumer {consumer_name} still {consumer['ConsumerStatus']} "
+                f"after {timeout}s"
+            )
+
+        print(f"waiting for consumer to become ACTIVE ({consumer['ConsumerStatus']})")
+        time.sleep(2)
+
+
+def yield_shard_event_records(
+    client, stream_arn, stream_name=None, shard_id=None, consumer_arn=None
+):
+    """
+    Stream a single shard using Enhanced Fan Out.  If ``shard_id`` is not
+    given, the first open shard is used.  If ``consumer_arn`` is not given,
+    the consumer is registered/looked up first.
+
+    Example ``describe_stream`` shard listing:
+
         "Shards": [
             {
                 "ShardId": "shardId-000000000000",
@@ -334,30 +388,6 @@ def yield_shard_event_records(client, stream_arn, stream_name=None):
                 "SequenceNumberRange": {
                     "StartingSequenceNumber": "49609778095343646355337956397435936009430583510030090242",
                     "EndingSequenceNumber": "49646355163556106869274729768788754436714702200591351810"
-                }
-            },
-            {
-                "ShardId": "shardId-000000000001",
-                "ParentShardId": "shardId-000000000000",
-                "HashKeyRange": {
-                    "StartingHashKey": "0",
-                    "EndingHashKey": "170141183460469231731687303715884105727"
-                },
-                "SequenceNumberRange": {
-                    "StartingSequenceNumber": "49646490658970152358998813378474669417129039791193587730",
-                    "EndingSequenceNumber": "49646490658981302731598078690044228350446162896582869010"
-                }
-            },
-            {
-                "ShardId": "shardId-000000000002",
-                "ParentShardId": "shardId-000000000000",
-                "HashKeyRange": {
-                    "StartingHashKey": "170141183460469231731687303715884105728",
-                    "EndingHashKey": "340282366920938463463374607431768211455"
-                },
-                "SequenceNumberRange": {
-                    "StartingSequenceNumber": "49646490658992453104197344001616205135401688152699568162",
-                    "EndingSequenceNumber": "49646490659003603476796609313185764068718811258088849442"
                 }
             },
             {
@@ -373,52 +403,21 @@ def yield_shard_event_records(client, stream_arn, stream_name=None):
                 }
             }
         ],
+    """
 
-        """
+    if shard_id is None:
+        shard_id = list_open_shard_ids(client, stream_name)[0]
 
-        describe_response = client.describe_stream(StreamName=stream_name)
-        shard_id = next(
-            filter(
-                lambda x: x.get("SequenceNumberRange", {}).get(
-                    "EndingSequenceNumber", "NO_ENDING_SEQUENCE_NUMBER"
-                )
-                == "NO_ENDING_SEQUENCE_NUMBER",
-                describe_response["StreamDescription"]["Shards"],
-            )
-        )["ShardId"]
+    if consumer_arn is None:
+        consumer_arn = get_consumer_arn(client, stream_arn)
 
-        print(f"describe stream: {json_dumps(describe_response, indent=4)}")
-        print(f"consuming from shardId: {shard_id}...")
+    print(f"consuming from shardId: {shard_id}...")
 
-        consumer_name = get_consumer_name()
-        print(f"consumer name: {consumer_name}")
-
-        try:
-            registeration_response = client.register_stream_consumer(
-                StreamARN=stream_arn, ConsumerName=consumer_name
-            )
-
-            print(f"register consumer response: {json_dumps(response, indent=4)}")
-
-            consumer_arn = registeration_response["Consumer"]["ConsumerARN"]
-        except:
-            print("consumer alread exists, fetching ARN...")
-            consumer_arn = client.describe_stream_consumer(
-                StreamARN=stream_arn, ConsumerName=consumer_name
-            )["ConsumerDescription"]["ConsumerARN"]
-            print(f"consumerARN: {consumer_arn}")
-
-        response = client.subscribe_to_shard(
-            ConsumerARN=consumer_arn,
-            ShardId=shard_id,
-            StartingPosition={"Type": "LATEST"},
-        )
-
-        return response["EventStream"]
-
-    event_stream = kinesis_shard_event_iterator(
-        stream_name=stream_name, client=client, stream_arn=stream_arn
-    )
+    event_stream = client.subscribe_to_shard(
+        ConsumerARN=consumer_arn,
+        ShardId=shard_id,
+        StartingPosition={"Type": "LATEST"},
+    )["EventStream"]
 
     for event in event_stream:
         if "SubscribeToShardEvent" not in event:

@@ -24,6 +24,7 @@ from transport_stream.stream_utils import subscribe_and_tag
 from transport_stream.stream_utils import encode_elementary_stream_message
 from transport_stream.stream_utils import decode_elementary_stream_message
 from transport_stream.stream_utils import fan_out_tags
+from transport_stream.shard_workers import run_multi_shard
 
 
 def run_service():
@@ -79,54 +80,14 @@ def run_service():
                 batch_size=TRANSPORT_STREAM_BATCH_SIZE,
             )
 
-    elif config["mode"] == "demux":
-        fan_out = fan_out_tags(context, tagged_addresses=config["elementary_streams"])
-
-        # advance the fan_out_tags generator to the ``yield '' statement
-        fan_out.send(None)
-
-        if config.get("kinesis_source_type", "ENHANCED_FAN_OUT") == "ENHANCED_FAN_OUT":
-            kinesis_iterator = yield_shard_event_records
-
-        elif config.get("kinesis_source_type", "ENHANCED_FAN_OUT") == "BASE_STREAM":
-            kinesis_iterator = yield_kinesis_records
-
-        while True:
-            for record in map(
-                verbose,
-                kinesis_iterator(
-                    stream_arn=config.get("stream_arn"),
-                    stream_name=config["stream_name"],
-                    client=kinesis_client,
-                ),
-            ):
-                if record:
-                    # fan_out.send(json.loads(record))
-                    fan_out.send(json.loads(json.loads(record.decode())))
-
-    elif config["mode"] == "raw":
-        fan_out = fan_out_tags(context, raw_stream=config["raw_stream"])
-
-        # advance the fan_out_tags generator to the ``yield '' statement
-        fan_out.send(None)
-
-        if config.get("kinesis_source_type", "ENHANCED_FAN_OUT") == "ENHANCED_FAN_OUT":
-            kinesis_iterator = yield_shard_event_records
-
-        elif config.get("kinesis_source_type", "ENHANCED_FAN_OUT") == "BASE_STREAM":
-            kinesis_iterator = yield_kinesis_records
-
-        while True:
-            for record in map(
-                verbose,
-                kinesis_iterator(
-                    stream_arn=config.get("stream_arn"),
-                    stream_name=config["stream_name"],
-                    client=kinesis_client,
-                ),
-            ):
-                if record:
-                    fan_out.send(record)
+    elif config["mode"] in ("demux", "raw"):
+        # one reader process per shard -> Queue -> one ZMQ writer process
+        run_multi_shard(
+            config,
+            profile=AWS_DEFAULT_PROFILE,
+            region=AWS_DEFAULT_REGION,
+            verbose=bool(TRANSPORT_STREAM_VERBOSE_MODE),
+        )
 
     elif config["mode"] == "pub":
         while True:
